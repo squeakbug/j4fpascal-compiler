@@ -113,26 +113,6 @@ impl FiniteAutomata {
     }
 }
 
-impl FiniteAutomata {
-    pub fn is_match(&self, input: &str) -> bool {
-        let mut current_state = self.start_state;
-        for c in input.bytes() {
-            let next_state = self.transition_table
-                .get(&current_state)
-                .and_then(|table| table.get(&SymbolType::Alpha(c)))
-                .cloned()
-                .unwrap_or_default();
-            // println!("char: {}; next_state: {:?}", c, next_state);
-            if next_state.is_empty() {
-                return false;
-            } else {
-                current_state = *next_state.iter().next().unwrap();
-            }
-        }
-        self.final_states.contains(&current_state)
-    }
-}
-
 pub fn exchange_states(tr_table: TrTableType, old_state: StateID, new_state: StateID) -> TrTableType {
     let mut new_table = tr_table.clone();
 

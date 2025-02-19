@@ -12,7 +12,6 @@ authors = ["squeakbug <squeakbug73@outlook.com>"]
 edition = "2021"
 
 [workspace.dependencies]
-backend = { path = "crates/backend" }
 frontend = { path = "crates/frontend" }
 regex = { path = "crates/regex" }
 
