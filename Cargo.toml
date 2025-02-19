@@ -1,0 +1,20 @@
+[workspace]
+resolver = "2"
+
+members = [
+    "crates/*"
+]
+
+[workspace.package]
+name = "salusa-secundus"
+version = "0.0.1"
+authors = ["squeakbug <squeakbug73@outlook.com>"]
+edition = "2021"
+
+[workspace.dependencies]
+backend = { path = "crates/backend" }
+frontend = { path = "crates/frontend" }
+regex = { path = "crates/regex" }
+
+[profile.release]
+lto = true

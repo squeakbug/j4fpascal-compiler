@@ -1,0 +1,13 @@
+[package]
+name = "regex-wrapper"
+version = "0.0.1"
+authors = ["squeakbug <squeakbug73@outlook.com>"]
+edition = "2021"
+
+[dependencies]
+regex = { workspace = true }
+
+assert_cmd = "2.0.14"
+colored = "2.1.0"
+cursive = "0.20.0"
+predicates = "3.1.0"
