@@ -7,6 +7,7 @@ use lazy_static::lazy_static;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenType {
+    True, False,
     Number(f64),
     StringLiteral(String),
     Semicolon,
@@ -18,7 +19,7 @@ pub enum TokenType {
     EOF,
 
     // Operators
-    Plus, Minus,
+    Plus, Minus, Bang,
     Star, Slash,
     Less, Greater,
     LessEqual, GreaterEqual,
