@@ -43,17 +43,17 @@ impl Regex {
         unimplemented!()
     }
 
-    pub fn captures(&self, haystack: &str) -> Option<Captures> {
+    pub fn captures(&self, _haystack: &str) -> Option<Captures> {
         // TODO: Implement capturing groups in regular expressions
         unimplemented!()
     }
 
-    pub fn find(&self, haystack: &str) -> Option<Match> {
+    pub fn find(&self, _haystack: &str) -> Option<Match> {
         // TODO: Implement regular expression matching
         unimplemented!()
     }
 
-    pub fn is_match(&self, haystack: &str) -> bool {
+    pub fn is_match(&self, _haystack: &str) -> bool {
         // TODO: Implement regular expression matching
 
         /*
@@ -79,14 +79,14 @@ impl Regex {
 
     pub fn replace<R: Replacer>(
         &self,
-        haystack: &str,
-        rep: R
+        _haystack: &str,
+        _rep: R
     ) -> Cow<str> {
         // TODO: Implement regular expression replacement
         unimplemented!()
     }
 
-    pub fn split(&self, haystack: &str) -> Split {
+    pub fn split(&self, _haystack: &str) -> Split {
         // TODO: Implement regular expression splitting
         unimplemented!()
     }

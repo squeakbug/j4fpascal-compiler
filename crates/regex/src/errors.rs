@@ -1,3 +1,3 @@
-pub enum FiniteAutomataError {
+pub enum _FiniteAutomataError {
     NotFoundError,
 }

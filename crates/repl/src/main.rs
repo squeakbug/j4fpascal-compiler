@@ -12,14 +12,14 @@ impl Interpreter {
         Interpreter {}
     }
 
-    fn interpret_ast(&mut self, ast: &AST) {
+    fn interpret_ast(&mut self, _ast: &AST) {
         
     }
 
     pub fn eval(&mut self, exp: &str) -> Result<String, String> {
-        let tokens = lexer::lex(exp).unwrap();
-        let ast = parser::parse(&x).unwrap();
-        self.interpret_ast(ast);
+        // let tokens = lexer::lex(exp).unwrap();
+        // let ast = parser::parse(&x).unwrap();
+        // self.interpret_ast(ast);
         todo!()
     }
 }

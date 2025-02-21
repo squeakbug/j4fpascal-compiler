@@ -14,6 +14,8 @@ edition = "2021"
 [workspace.dependencies]
 frontend = { path = "crates/frontend" }
 regex = { path = "crates/regex" }
+thiserror = { version = "2.0.11" }
+lazy_static = { version = "1.5.0" }
 
 [profile.release]
 lto = true
