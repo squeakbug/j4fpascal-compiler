@@ -3,52 +3,89 @@ use std::{collections::HashMap, iter::Peekable, str::Chars};
 use lazy_static::lazy_static;
 use thiserror::Error;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TokenType {
+    // Unsigned constant
+    UnsignedInteger(String),
+    UnsignedReal(String),
+
+    // Bool
     True,
     False,
-    Number(f64),
+
     StringLiteral(String),
+    Colon,
     Semicolon,
-    Comma,
     LeftParen,
     RightParen,
     LeftBrace,
     RightBrace,
-    EOF,
+    Eof,
+    Nil,
 
-    // Operators
-    Plus,
-    Minus,
-    Bang,
-    Star,
-    Slash,
+    // Relational operator
+    Equal,
+    NotEqual,
     Less,
     Greater,
     LessEqual,
     GreaterEqual,
-    Percent,
-    Equal,
-    NotEqual,
-    And,
+
+    // Additive operator
+    Plus,
+    Minus,
     Or,
-    Not,
+
+    // Multiplicative operator
+    Star,
+    Slash,
+    Div,
+    Mod,
+    And,
+
+    // Other operators
     Assignment,
+    Not,
+    Comma,
+
+    // Builtin types
+    Boolean,
+    Char,
+    Integer,
+    Real,
+    Set,
+    String,
+
+    // Identifier
+    Identifier(String),
 
     // Keywords
-    If,
-    While,
-    For,
-    Until,
+    Array,
     Begin,
-    End,
-    Of,
-    Return,
-    Function,
-    Procedure,
-    Type,
+    Case,
     Const,
+    Do,
+    Else,
+    End,
+    For,
+    Function,
+    Goto,
+    If,
+    In,
+    Label,
+    Of,
+    Packed,
+    Procedure,
+    Program,
+    Record,
+    Repeat,
+    Then,
+    To,
+    Type,
+    Until,
     Var,
+    While,
+    With,
 }
 
 #[derive(Debug, Clone)]
@@ -86,14 +123,46 @@ pub enum LexerError {
 lazy_static! {
     static ref KEYWORDS: HashMap<&'static str, TokenType> = {
         let mut m = HashMap::new();
-        m.insert("if", TokenType::If);
-        m.insert("while", TokenType::While);
-        m.insert("for", TokenType::For);
-        m.insert("until", TokenType::Until);
+        m.insert("and", TokenType::And);
+        m.insert("array", TokenType::Array);
         m.insert("begin", TokenType::Begin);
+        m.insert("boolean", TokenType::Boolean);
+        m.insert("case", TokenType::Case);
+        m.insert("char", TokenType::Char);
+        m.insert("const", TokenType::Const);
+        m.insert("div", TokenType::Div);
+        m.insert("do", TokenType::Do);
+        m.insert("else", TokenType::Else);
         m.insert("end", TokenType::End);
+        m.insert("false", TokenType::False);
+        m.insert("for", TokenType::For);
+        m.insert("function", TokenType::Function);
+        m.insert("goto", TokenType::Goto);
+        m.insert("if", TokenType::If);
+        m.insert("in", TokenType::In);
+        m.insert("integer", TokenType::Integer);
+        m.insert("label", TokenType::Label);
+        m.insert("mod", TokenType::Mod);
+        m.insert("nil", TokenType::Nil);
+        m.insert("not", TokenType::Not);
         m.insert("of", TokenType::Of);
-        m.insert("return", TokenType::Return);
+        m.insert("or", TokenType::Or);
+        m.insert("packed", TokenType::Packed);
+        m.insert("procedure", TokenType::Procedure);
+        m.insert("program", TokenType::Program);
+        m.insert("real", TokenType::Real);
+        m.insert("record", TokenType::Record);
+        m.insert("repeat", TokenType::Repeat);
+        m.insert("set", TokenType::Set);
+        m.insert("string", TokenType::String);
+        m.insert("then", TokenType::Then);
+        m.insert("to", TokenType::To);
+        m.insert("to", TokenType::True);
+        m.insert("type", TokenType::Type);
+        m.insert("until", TokenType::Until);
+        m.insert("var", TokenType::Var);
+        m.insert("while", TokenType::While);
+        m.insert("with", TokenType::With);
         m
     };
 }
@@ -144,9 +213,11 @@ impl<'stream> Lexer<'stream> {
         }
     }
 
+    // Упростили парсер за счет усложнения лексера
     // TODO: add hex and octal separators
     fn number(&mut self) {
         let mut length = 0;
+        let mut is_float = false;
         self.lexeme_start = Some(self.istream.clone().unwrap());
         while let Some(c) = self.peek() {
             if c.is_digit(10) {
@@ -158,6 +229,7 @@ impl<'stream> Lexer<'stream> {
         }
         if let Some('.') = self.peek() {
             length += 1;
+            is_float = true;
             while let Some(c) = self.peek() {
                 if c.is_digit(10) {
                     length += 1;
@@ -168,12 +240,15 @@ impl<'stream> Lexer<'stream> {
             }
         }
 
-        let iter = self.lexeme_start.take().expect("UNREACHABLE");
-        let literal = iter.take(length).collect::<String>();
-        match literal.parse::<f64>() {
-            Ok(number) => self.add_token(TokenType::Number(number)),
-            Err(_) => {}
-        };
+        if length > 0 {
+            let iter = self.lexeme_start.take().expect("UNREACHABLE");
+            let literal = iter.take(length).collect::<String>();
+            if is_float {
+                self.add_token(TokenType::UnsignedReal(literal))
+            } else {
+                self.add_token(TokenType::UnsignedInteger(literal))
+            }
+        }
     }
 
     fn string_literal(&mut self) {
@@ -193,7 +268,7 @@ impl<'stream> Lexer<'stream> {
         }
     }
 
-    fn keyword(&mut self) {
+    fn keyword_or_identifier(&mut self) {
         let mut length = 0;
         self.lexeme_start = Some(self.istream.clone().unwrap());
         while let Some(c) = self.peek() {
@@ -205,10 +280,14 @@ impl<'stream> Lexer<'stream> {
             }
         }
 
-        let iter = self.lexeme_start.take().expect("UNREACHABLE");
-        let literal = iter.take(length).collect::<String>();
-        if let Some(token_type) = KEYWORDS.get(literal.as_str()) {
-            self.add_token(token_type.clone());
+        if length > 0 {
+            let iter = self.lexeme_start.take().expect("UNREACHABLE");
+            let literal = iter.take(length).collect::<String>();
+            if let Some(token_type) = KEYWORDS.get(literal.as_str()) {
+                self.add_token(token_type.clone());
+            } else {
+                self.add_token(TokenType::Identifier(literal));
+            }   
         }
     }
 
@@ -218,22 +297,38 @@ impl<'stream> Lexer<'stream> {
             '+' => self.add_token(TokenType::Plus),
             '-' => self.add_token(TokenType::Minus),
             '*' => self.add_token(TokenType::Star),
-            '/' => self.add_token(TokenType::Minus),
-            '<' => match self.advance() {
-                Some('=') => self.add_token(TokenType::LessEqual),
-                _ => self.add_token(TokenType::Less),
+            '/' => self.add_token(TokenType::Slash),
+            '(' => self.add_token(TokenType::LeftParen),
+            ')' => self.add_token(TokenType::RightParen),
+            ':' => self.add_token(TokenType::Colon),
+            ',' => self.add_token(TokenType::Comma),
+            '<' => {
+                self.advance();
+                match self.peek() {
+                    Some('=') => self.add_token(TokenType::LessEqual),
+                    _ => self.add_token(TokenType::Less),
+                }
             },
-            '>' => match self.advance() {
-                Some('=') => self.add_token(TokenType::GreaterEqual),
-                _ => self.add_token(TokenType::Greater),
+            '>' => {
+                self.advance();
+                match self.peek() {
+                    Some('=') => self.add_token(TokenType::GreaterEqual),
+                    _ => self.add_token(TokenType::Greater),
+                }
             },
-            '=' => match self.advance() {
-                Some('=') => self.add_token(TokenType::Equal),
-                _ => self.add_token(TokenType::Assignment),
+            '=' => {
+                self.advance();
+                match self.peek() {
+                    Some('=') => self.add_token(TokenType::Equal),
+                    _ => self.add_token(TokenType::Assignment),
+                }
             },
-            '!' => match self.advance() {
-                Some('=') => self.add_token(TokenType::GreaterEqual),
-                _ => self.add_token(TokenType::Greater),
+            '!' => {
+                self.advance();
+                match self.peek() {
+                    Some('=') => self.add_token(TokenType::GreaterEqual),
+                    _ => self.add_token(TokenType::Greater),
+                }
             },
             _ => return Some(false),
         }
@@ -247,7 +342,7 @@ impl<'stream> Lexer<'stream> {
         self.operator();
         self.string_literal();
         self.number();
-        self.keyword();
+        self.keyword_or_identifier();
     }
 
     // TODO: must return iterator instead of Vec
@@ -256,7 +351,7 @@ impl<'stream> Lexer<'stream> {
         while self.peek().is_some() {
             self.lex_token();
         }
-        self.add_token(TokenType::EOF);
+        self.add_token(TokenType::Eof);
         self.istream = None;
         Ok(self.ostream.clone())
     }
@@ -269,6 +364,28 @@ mod tests {
     #[test]
     fn lex_arith() {
         let mut lexer = Lexer::new();
-        assert_eq!(lexer.lex("1 + 2").unwrap().len(), 4);
+        assert_eq!(
+            lexer.lex("y = x / (1 + 2) * 4").unwrap()
+                .into_iter()
+                .map(|token| token.token_type).collect::<Vec<_>>(), 
+            vec![
+                TokenType::Identifier(String::from("y")),
+                TokenType::Assignment,
+                TokenType::Identifier(String::from("x")),
+                TokenType::Slash,
+                TokenType::LeftParen,
+                TokenType::UnsignedInteger(String::from("1")), 
+                TokenType::Plus, 
+                TokenType::UnsignedInteger(String::from("2")),
+                TokenType::RightParen,
+                TokenType::Star,
+                TokenType::UnsignedInteger(String::from("4")),
+                TokenType::Eof
+            ]
+        );
     }
 }
+
+// Ошибки вида "if a !asf b" выявляется на этапе
+// синтаксического анализа. Лексер отдает только токены:
+// ["if", "a", "!", "asf" , "b"]

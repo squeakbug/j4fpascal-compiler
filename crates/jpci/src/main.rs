@@ -23,8 +23,10 @@ fn main() {
         }
 
         match interpreter.eval(&input) {
-            Ok(result) => println!("Result: {}", result),
+            Ok(_) => println!(""),
             Err(e) => println!("Error: {:?}", e),
         }
+
+        dbg!(&interpreter);
     }
 }
