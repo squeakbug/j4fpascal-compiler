@@ -28,7 +28,9 @@ fn main() {
         let mut choice = String::new();
         print!("Выберите пункт меню: ");
         io::stdout().flush().unwrap();
-        io::stdin().read_line(&mut choice).expect("Ошибка чтения строки");
+        io::stdin()
+            .read_line(&mut choice)
+            .expect("Ошибка чтения строки");
 
         match choice.trim().parse::<i32>() {
             Ok(REGEX_OUTPUT) => {
@@ -43,7 +45,9 @@ fn main() {
                     let mut string_input = String::new();
                     print!("Введите строку: ");
                     io::stdout().flush().unwrap();
-                    io::stdin().read_line(&mut string_input).expect("Ошибка чтения строки");
+                    io::stdin()
+                        .read_line(&mut string_input)
+                        .expect("Ошибка чтения строки");
                     if string_input.ends_with('\n') {
                         string_input.pop();
                     }
@@ -66,7 +70,9 @@ fn main() {
                 let mut regex_input = String::new();
                 print!("Введите новое регулярное выражение: ");
                 io::stdout().flush().unwrap();
-                io::stdin().read_line(&mut regex_input).expect("Ошибка чтения");
+                io::stdin()
+                    .read_line(&mut regex_input)
+                    .expect("Ошибка чтения");
                 let trimmed_regex = regex_input.trim();
                 let new_regex = regex::Regex::new(trimmed_regex)
                     .expect(&format!("{}", "Некорректное регулярное выражение".red()));
@@ -76,7 +82,10 @@ fn main() {
                 break;
             }
             _ => {
-                println!("{}", "Введите значение какой-нибудь функции из пространства Лебега в точке 0");
+                println!(
+                    "{}",
+                    "Введите значение какой-нибудь функции из пространства Лебега в точке 0"
+                );
             }
         }
     }

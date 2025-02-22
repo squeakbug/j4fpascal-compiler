@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use crate::dfs::{FiniteAutomata, StateID, SymbolType, TrTableType, exchange_states};
+use crate::dfs::{exchange_states, FiniteAutomata, StateID, SymbolType, TrTableType};
 
 pub fn get_reverse_transitions(fa: &FiniteAutomata) -> TrTableType {
     let old_tr_table = &fa.transition_table;
@@ -102,11 +102,18 @@ fn get_components(table: &Vec<Vec<bool>>) -> Vec<i32> {
     return components;
 }
 
-fn build_new_tr_table(mut tr_table: TrTableType, components: &Vec<i32>, states: &HashSet<usize>) -> TrTableType {
+fn build_new_tr_table(
+    mut tr_table: TrTableType,
+    components: &Vec<i32>,
+    states: &HashSet<usize>,
+) -> TrTableType {
     for state in states.iter() {
-        let eq_states: Vec<usize> = components.iter().enumerate().filter(|(_, new_state)| {
-            **new_state == *state as i32
-        }).map(|(old_state, _)| old_state).collect();
+        let eq_states: Vec<usize> = components
+            .iter()
+            .enumerate()
+            .filter(|(_, new_state)| **new_state == *state as i32)
+            .map(|(old_state, _)| old_state)
+            .collect();
 
         for eq_state in eq_states {
             tr_table = exchange_states(tr_table, eq_state, *state + 100);

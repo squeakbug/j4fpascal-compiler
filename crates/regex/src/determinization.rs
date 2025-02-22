@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use crate::dfs::{FiniteAutomata, StateID, SymbolType, exchange_states};
 use crate::dfs::TrTableType;
+use crate::dfs::{exchange_states, FiniteAutomata, StateID, SymbolType};
 
 pub fn get_new_state(
     fa: &FiniteAutomata,
@@ -39,7 +39,7 @@ pub fn determ(fa: FiniteAutomata) -> FiniteAutomata {
     while let Some((from, set)) = state_queue.pop_front() {
         for &c in &fa.alphabet {
             let new_state_set = get_new_state(&fa, &set, SymbolType::Alpha(c));
-            if let Some(pos) = proc_vec.iter().position(|(_, set)| { *set == new_state_set }) {
+            if let Some(pos) = proc_vec.iter().position(|(_, set)| *set == new_state_set) {
                 dfa.add_transition(from, SymbolType::Alpha(c), proc_vec[pos].0);
             } else {
                 if !new_state_set.is_empty() {
@@ -61,7 +61,7 @@ pub fn determ(fa: FiniteAutomata) -> FiniteAutomata {
         }
     }
     dfa.alphabet = fa.alphabet.clone();
-    
+
     dfa
 }
 
@@ -83,10 +83,7 @@ pub fn get_no_eps_reachable_states(fa: &FiniteAutomata) -> HashSet<StateID> {
                 new_states.remove(to);
             }
         }
-        let transitions = fa
-            .transition_table
-            .get(&from)
-            .unwrap();
+        let transitions = fa.transition_table.get(&from).unwrap();
         for (_, to_states) in transitions {
             for state in to_states {
                 if !visited.contains(state) {
@@ -98,13 +95,18 @@ pub fn get_no_eps_reachable_states(fa: &FiniteAutomata) -> HashSet<StateID> {
     new_states
 }
 
-fn in_connected_to_finite_via_eps(table: &TrTableType, final_states: &HashSet<StateID>, visited: HashSet<StateID>, state: StateID) -> Option<bool> {
+fn in_connected_to_finite_via_eps(
+    table: &TrTableType,
+    final_states: &HashSet<StateID>,
+    visited: HashSet<StateID>,
+    state: StateID,
+) -> Option<bool> {
     let neighs = table.get(&state)?.get(&SymbolType::Eps)?;
     for &n in neighs.iter() {
         if final_states.contains(&n) {
             return Some(true);
         }
-        
+
         let mut new_visited = visited.clone();
         new_visited.insert(state);
         if let Some(true) = in_connected_to_finite_via_eps(table, final_states, new_visited, n) {
@@ -132,7 +134,12 @@ pub fn remove_eps(mut fa: FiniteAutomata) -> FiniteAutomata {
 
     let old_final_states = fa.final_states.clone();
     for &state in fa.states.iter() {
-        if let Some(true) = in_connected_to_finite_via_eps(&fa.transition_table, &old_final_states, HashSet::new(), state) {
+        if let Some(true) = in_connected_to_finite_via_eps(
+            &fa.transition_table,
+            &old_final_states,
+            HashSet::new(),
+            state,
+        ) {
             fa.final_states.insert(state);
         }
     }
@@ -160,7 +167,11 @@ pub fn remove_eps(mut fa: FiniteAutomata) -> FiniteAutomata {
         }
     }
     fa.states = HashSet::from_iter(new_states.into_iter());
-    fa.final_states = fa.final_states.into_iter().filter(|x| fa.states.contains(x)).collect();
+    fa.final_states = fa
+        .final_states
+        .into_iter()
+        .filter(|x| fa.states.contains(x))
+        .collect();
 
     fa
 }

@@ -8,9 +8,7 @@ mod errors;
 mod minimization;
 mod thompson;
 
-pub struct Captures {
-
-}
+pub struct Captures {}
 
 pub trait Replacer {
     fn replace_append(&mut self, caps: Captures, std: &mut String);
@@ -23,18 +21,14 @@ pub struct Regex {
     pub(crate) fa: dfs::FiniteAutomata,
 }
 
-pub struct Split {
-    
-}
+pub struct Split {}
 
-pub struct Match {
-
-}
+pub struct Match {}
 
 impl Regex {
     pub fn new(exp: &str) -> Result<Self, ()> {
         Ok(Regex {
-            fa: from_regexp_iter(&mut exp.chars().peekable())
+            fa: from_regexp_iter(&mut exp.chars().peekable()),
         })
     }
 
@@ -77,11 +71,7 @@ impl Regex {
         unimplemented!()
     }
 
-    pub fn replace<R: Replacer>(
-        &self,
-        _haystack: &str,
-        _rep: R
-    ) -> Cow<str> {
+    pub fn replace<R: Replacer>(&self, _haystack: &str, _rep: R) -> Cow<str> {
         // TODO: Implement regular expression replacement
         unimplemented!()
     }

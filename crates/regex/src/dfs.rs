@@ -113,13 +113,19 @@ impl FiniteAutomata {
     }
 }
 
-pub fn exchange_states(tr_table: TrTableType, old_state: StateID, new_state: StateID) -> TrTableType {
+pub fn exchange_states(
+    tr_table: TrTableType,
+    old_state: StateID,
+    new_state: StateID,
+) -> TrTableType {
     let mut new_table = tr_table.clone();
 
     if let Some(old_state_transitions) = tr_table.get(&old_state).clone() {
         new_table.remove(&old_state);
         new_table.insert(new_state, HashMap::new());
-        let new_state_transitions = new_table.get_mut(&new_state).expect("No new state transitions");
+        let new_state_transitions = new_table
+            .get_mut(&new_state)
+            .expect("No new state transitions");
         for (symbol, to_states) in old_state_transitions {
             new_state_transitions.insert(*symbol, to_states.clone());
         }
@@ -134,7 +140,7 @@ pub fn exchange_states(tr_table: TrTableType, old_state: StateID, new_state: Sta
         }
     }
 
-   new_table
+    new_table
 }
 
 pub fn concat_fa(mut fa1: FiniteAutomata, mut fa2: FiniteAutomata) -> FiniteAutomata {

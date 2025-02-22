@@ -1,5 +1,6 @@
 use crate::lexer::Token;
 
+#[derive(Debug)]
 pub enum Expr {
     Binary {
         left: Box<Expr>,
@@ -16,8 +17,4 @@ pub enum Expr {
     Literal {
         value: Token,
     },
-}
-
-pub trait Visitor<'ast> {
-    fn visit_expr();
 }

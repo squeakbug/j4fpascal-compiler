@@ -1,13 +1,12 @@
-use std::{
-    collections::HashMap, iter::Peekable, str::Chars
-};
+use std::{collections::HashMap, iter::Peekable, str::Chars};
 
-use thiserror::Error;
 use lazy_static::lazy_static;
+use thiserror::Error;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenType {
-    True, False,
+    True,
+    False,
     Number(f64),
     StringLiteral(String),
     Semicolon,
@@ -19,17 +18,37 @@ pub enum TokenType {
     EOF,
 
     // Operators
-    Plus, Minus, Bang,
-    Star, Slash,
-    Less, Greater,
-    LessEqual, GreaterEqual,
+    Plus,
+    Minus,
+    Bang,
+    Star,
+    Slash,
+    Less,
+    Greater,
+    LessEqual,
+    GreaterEqual,
     Percent,
-    Equal, NotEqual,
-    And, Or, Not,
+    Equal,
+    NotEqual,
+    And,
+    Or,
+    Not,
     Assignment,
 
     // Keywords
-    If, While, For, Until, Begin, End, Of, Return,
+    If,
+    While,
+    For,
+    Until,
+    Begin,
+    End,
+    Of,
+    Return,
+    Function,
+    Procedure,
+    Type,
+    Const,
+    Var,
 }
 
 #[derive(Debug, Clone)]
@@ -38,10 +57,10 @@ pub struct Token {
     pub pos: usize,
 }
 
-pub struct Lexer<'a> {
-    istream: Peekable<Chars<'a>>,
+pub struct Lexer<'stream> {
+    istream: Option<Peekable<Chars<'stream>>>,
     ostream: Vec<Token>,
-    lexeme_start: Option<Peekable<Chars<'a>>>,
+    lexeme_start: Option<Peekable<Chars<'stream>>>,
     pos: usize,
 }
 
@@ -80,10 +99,10 @@ lazy_static! {
 }
 
 // TODO: implement Iter trait for Lexer
-impl<'a> Lexer<'a> {
-    pub fn new(stream: &'a str) -> Self {
+impl<'stream> Lexer<'stream> {
+    pub fn new() -> Self {
         Lexer {
-            istream: stream.chars().peekable(),
+            istream: None,
             ostream: Vec::new(),
             lexeme_start: None,
             pos: 0,
@@ -92,22 +111,27 @@ impl<'a> Lexer<'a> {
 
     fn advance(&mut self) -> Option<char> {
         self.pos += 1;
-        self.istream.next()
+        self.istream.as_mut().unwrap().next()
     }
 
     fn peek(&mut self) -> Option<char> {
-        self.istream.peek().map(|c| c.to_owned())
+        self.istream.as_mut().unwrap().peek().map(|c| c.to_owned())
     }
 
     /// Inserts token to output stream, adding current position
     fn add_token(&mut self, token_type: TokenType) {
-        self.ostream.push(Token { token_type, pos: self.pos });
+        self.ostream.push(Token {
+            token_type,
+            pos: self.pos,
+        });
     }
 
     fn space(&mut self) {
         while let Some(c) = self.peek() {
             match c {
-                ' ' | '\t' | '\n' => { let _ =  self.advance(); },
+                ' ' | '\t' | '\n' => {
+                    let _ = self.advance();
+                }
                 _ => break,
             }
         }
@@ -123,7 +147,7 @@ impl<'a> Lexer<'a> {
     // TODO: add hex and octal separators
     fn number(&mut self) {
         let mut length = 0;
-        self.lexeme_start = Some(self.istream.clone());
+        self.lexeme_start = Some(self.istream.clone().unwrap());
         while let Some(c) = self.peek() {
             if c.is_digit(10) {
                 length += 1;
@@ -148,14 +172,14 @@ impl<'a> Lexer<'a> {
         let literal = iter.take(length).collect::<String>();
         match literal.parse::<f64>() {
             Ok(number) => self.add_token(TokenType::Number(number)),
-            Err(_) => { }
+            Err(_) => {}
         };
     }
 
     fn string_literal(&mut self) {
         if let Some('\"') = self.peek() {
             let mut length = 0;
-            self.lexeme_start = Some(self.istream.clone());
+            self.lexeme_start = Some(self.istream.clone().unwrap());
             self.advance();
             while let Some(c) = self.advance() {
                 if c == '\"' {
@@ -171,7 +195,7 @@ impl<'a> Lexer<'a> {
 
     fn keyword(&mut self) {
         let mut length = 0;
-        self.lexeme_start = Some(self.istream.clone());
+        self.lexeme_start = Some(self.istream.clone().unwrap());
         while let Some(c) = self.peek() {
             if c.is_alphanumeric() {
                 self.advance();
@@ -189,35 +213,27 @@ impl<'a> Lexer<'a> {
     }
 
     fn operator(&mut self) -> Option<bool> {
-        let ch = self.istream.peek()?;
+        let ch = self.peek()?;
         match ch {
             '+' => self.add_token(TokenType::Plus),
             '-' => self.add_token(TokenType::Minus),
             '*' => self.add_token(TokenType::Star),
             '/' => self.add_token(TokenType::Minus),
-            '<' => {
-                match self.istream.next() {
-                    Some('=') => self.add_token(TokenType::LessEqual),
-                    _ => self.add_token(TokenType::Less),
-                }
+            '<' => match self.advance() {
+                Some('=') => self.add_token(TokenType::LessEqual),
+                _ => self.add_token(TokenType::Less),
             },
-            '>' => {
-                match self.istream.next() {
-                    Some('=') => self.add_token(TokenType::GreaterEqual),
-                    _ => self.add_token(TokenType::Greater),
-                }
+            '>' => match self.advance() {
+                Some('=') => self.add_token(TokenType::GreaterEqual),
+                _ => self.add_token(TokenType::Greater),
             },
-            '=' => {
-                match self.istream.next() {
-                    Some('=') => self.add_token(TokenType::Equal),
-                    _ => self.add_token(TokenType::Assignment),
-                }
+            '=' => match self.advance() {
+                Some('=') => self.add_token(TokenType::Equal),
+                _ => self.add_token(TokenType::Assignment),
             },
-            '!' => {
-                match self.istream.next() {
-                    Some('=') => self.add_token(TokenType::GreaterEqual),
-                    _ => self.add_token(TokenType::Greater),
-                }
+            '!' => match self.advance() {
+                Some('=') => self.add_token(TokenType::GreaterEqual),
+                _ => self.add_token(TokenType::Greater),
             },
             _ => return Some(false),
         }
@@ -235,11 +251,13 @@ impl<'a> Lexer<'a> {
     }
 
     // TODO: must return iterator instead of Vec
-    pub fn lex(&mut self) -> Result<Vec<Token>, LexerError> {
+    pub fn lex(&mut self, istream: &'stream str) -> Result<Vec<Token>, LexerError> {
+        self.istream = Some(istream.chars().peekable());
         while self.peek().is_some() {
             self.lex_token();
         }
         self.add_token(TokenType::EOF);
+        self.istream = None;
         Ok(self.ostream.clone())
     }
 }
@@ -250,7 +268,7 @@ mod tests {
 
     #[test]
     fn lex_arith() {
-        let mut lexer = Lexer::new("1+ 2");
-        assert_eq!(lexer.lex().unwrap().len(), 4);
+        let mut lexer = Lexer::new();
+        assert_eq!(lexer.lex("1 + 2").unwrap().len(), 4);
     }
 }
