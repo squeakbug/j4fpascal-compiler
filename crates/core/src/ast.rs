@@ -1,5 +1,22 @@
 use crate::lexer::Token;
 
+#[derive(Debug)]
+pub enum DesignatorItem {
+    Generic,
+    ArrayAccess {
+        indexes: Vec<Box<Expr>>,
+    },
+    Call {
+        parameters: Vec<(Box<Expr>, Vec<Box<Expr>>)>,
+    },
+}
+
+#[derive(Debug)]
+pub struct Designator {
+    pub name: Option<Token>,
+    pub items: Vec<DesignatorItem>,
+}
+
 // This syntax tree is less complex, than parsing tree (that i don't form)
 #[derive(Debug)]
 pub enum Expr {
@@ -14,9 +31,6 @@ pub enum Expr {
     },
     Grouping {
         expression: Box<Expr>,
-    },
-    Variable {
-        var: Token,
     },
     Literal {
         value: Token,
@@ -42,8 +56,11 @@ pub enum Stmt {
         statement: Box<Stmt>,
     },
     Assigment {
-        left: Token,
+        left: Designator,
         right: Box<Expr>,
+    },
+    ProcedureCall {
+        designator: Designator,
     },
     Compound {
         statements: Vec<Box<Stmt>>,
@@ -72,10 +89,6 @@ pub enum Stmt {
         to: Box<Expr>,
         statement: Box<Stmt>,
         is_down_to: bool,
-    },
-    ProcedureCall {
-        name: Token,
-        arguments: Vec<(Box<Expr>, Vec<Box<Expr>>)>,
     },
     Goto {
         label: Token,

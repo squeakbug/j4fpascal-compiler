@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 use crate::{
-    ast::{Block, CaseItem, CaseLabel, Declaration, Expr, Stmt},
+    ast::{Block, CaseItem, CaseLabel, Declaration, Designator, DesignatorItem, Expr, Stmt},
     lexer::{Token, TokenType},
 };
 
@@ -156,70 +156,130 @@ impl Parser {
         Ok(None)
     }
 
-    // TODO: add structured identifier
-    fn simple_statement(&mut self) -> Result<Option<Stmt>, ParserError> {
-        if let Some(stmt) = self.goto_statement()? {
-            return Ok(Some(stmt));
+    fn colon_construct(&mut self) -> Result<Vec<Box<Expr>>, ParserError> {
+        let mut expressions = vec![];
+        loop {
+            if let Some(token) = self.peek() {
+                if token.token_type == TokenType::Colon {
+                    self.advance();
+                    let expression = Box::new(self.expression()?);
+                    expressions.push(expression)
+                } else {
+                    break;
+                }
+            }
         }
+        Ok(expressions)
+    }
+
+    fn actual_parameter(&mut self) -> Result<Option<(Box<Expr>, Vec<Box<Expr>>)>, ParserError> {
+        let parameter = Box::new(self.expression()?);
+        let colon_construct = self.colon_construct()?;
+        Ok(Some((parameter, colon_construct)))
+    }
+
+    fn parameter_list(&mut self) -> Result<Vec<(Box<Expr>, Vec<Box<Expr>>)>, ParserError> {
+        let mut parameters = vec![];
+        if let Some(parameter) = self.actual_parameter()? {
+            parameters.push(parameter);
+            while let Some(token) = self.peek() {
+                if token.token_type == TokenType::Comma {
+                    self.advance();
+                    if let Some(parameter) = self.actual_parameter()? {
+                        parameters.push(parameter);
+                    } else {
+                        return Err(ParserError::UnexpectedToken(self.current));
+                    }
+                } else {
+                    break;
+                }
+            }
+        }
+        return Ok(parameters);
+    }
+
+    fn procedure_call(&mut self) -> Result<Option<DesignatorItem>, ParserError> {
+        match self.peek() {
+            Some(Token { token_type: TokenType::LeftParen,.. }) => {
+                self.advance();
+                let parameters = self.parameter_list()?;
+                self.consume(TokenType::RightParen)?;
+                Ok(Some(DesignatorItem::Call {
+                    parameters,
+                }))
+            }
+            _ => Err(ParserError::UnexpectedEOF(self.current)),
+        }
+    }
+
+    fn array_access(&mut self) -> Result<Option<DesignatorItem>, ParserError> {
+        match self.peek() {
+            Some(Token { token_type: TokenType::LeftBrack,.. }) => {
+                self.advance();
+                let indexes = self.expression_list()?;
+                self.consume(TokenType::RightBrack)?;
+                Ok(Some(DesignatorItem::ArrayAccess {
+                    indexes,
+                }))
+            }
+            _ => Err(ParserError::UnexpectedEOF(self.current)),
+        }
+    }
+
+    fn designator_item(&mut self) -> Result<Option<DesignatorItem>, ParserError> {
+        if let Some(array_access) = self.array_access()? {
+            return Ok(Some(array_access));
+        } else if let Some(procedure_call) = self.procedure_call()? {
+            return Ok(Some(procedure_call));
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn qualified_ident(&mut self) -> Result<Option<Token>, ParserError> {
         match self.peek() {
             Some(token@Token { token_type: TokenType::Identifier(_), .. }) => {
                 self.advance();
-                self.consume(TokenType::Assignment)?;
-                Ok(Some(Stmt::Assigment {
-                    left: token,
-                    right: Box::new(self.expression()?),
-                }))
+                return Ok(Some(token));
             },
             None => Err(ParserError::UnexpectedEOF(self.current)),
             _ => Ok(None),
         }
     }
 
-    fn procedure_call(&mut self) -> Result<Stmt, ParserError> {
-        match self.peek() {
-            Some(token@Token { token_type: TokenType::Identifier(_),.. }) => {
-                self.advance();
-                self.consume(TokenType::LeftParen)?;
-                let parameter_list = self.parameter_list()?;
-                self.consume(TokenType::RightParen)?;
-                Ok(Stmt::ProcedureCall {
-                    name: token.clone(),
-                    arguments: parameter_list,
-                })
-            }
-            _ => Err(ParserError::UnexpectedEOF(self.current)),
+    fn designator(&mut self) -> Result<Option<Designator>, ParserError> {
+        let name = self.qualified_ident()?;
+        let mut items = vec![];
+        while let Some(item) = self.designator_item()? {
+            items.push(item);
         }
+        Ok(Some(Designator {
+            name,
+            items,
+        }))
     }
 
-    fn parameter_list(&mut self) -> Result<Vec<(Box<Expr>, Vec<Box<Expr>>)>, ParserError> {
-        let mut arguments = vec![];
-        while let Some(token) = self.peek() {
-            if token.token_type == TokenType::RightParen {
-                break;
+    // TODO: add structured identifier
+    fn simple_statement(&mut self) -> Result<Option<Stmt>, ParserError> {
+        if let Some(designator) = self.designator()? {
+            if let Some(token) = self.peek() {
+                if token.token_type == TokenType::Assignment {
+                    self.advance();
+                    let expression = self.expression()?;
+                    return Ok(Some(Stmt::Assigment {
+                        left: designator,
+                        right: Box::new(expression),
+                    }));
+                } else {
+                    return Ok(Some(Stmt::ProcedureCall {
+                        designator,
+                    }));
+                }
             }
-            let argument = self.actual_parameter()?;
-            arguments.push(argument);
-            self.consume(TokenType::Comma)?;
+        } else if let Some(stmt) = self.goto_statement()? {
+            return Ok(Some(stmt));
         }
-        Ok(arguments)
-    }
-
-    fn actual_parameter(&mut self) -> Result<(Box<Expr>, Vec<Box<Expr>>), ParserError> {
-        let parameter = Box::new(self.expression()?);
-        let mut parameter_width = vec![];
-        while let Some(token) = self.peek() {
-            if token.token_type == TokenType::Colon {
-                let expression = self.parameter_width()?;
-                parameter_width.push(expression);
-            }
-        }
-        Ok((parameter, parameter_width))
-    }
-
-    fn parameter_width(&mut self) -> Result<Box<Expr>, ParserError> {
-        self.consume(TokenType::Colon)?;
-        let expression = self.expression()?;
-        Ok(Box::new(expression))
+        Ok(None)
     }
 
     fn statement_list(&mut self) -> Result<Vec<Box<Stmt>>, ParserError> {
@@ -398,6 +458,10 @@ impl Parser {
 
     fn raise_statement(&mut self) -> Result<Option<Stmt>, ParserError> {
         Ok(None)
+    }
+
+    fn expression_list(&mut self) -> Result<Vec<Box<Expr>>, ParserError> {
+        todo!();
     }
 
     // Как же это убого выглядит

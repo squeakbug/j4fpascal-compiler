@@ -18,8 +18,8 @@ pub enum TokenType {
     Semicolon,
     LeftParen,
     RightParen,
-    LeftBrace,
-    RightBrace,
+    LeftBrack,
+    RightBrack,
     Eof,
     Nil,
 
@@ -47,6 +47,7 @@ pub enum TokenType {
     Assignment,
     Not,
     Comma,
+    Dot,
     DotDot,
 
     // Builtin types
@@ -75,6 +76,7 @@ pub enum TokenType {
     Goto,
     If,
     In,
+    Is,
     Label,
     Of,
     Packed,
@@ -143,6 +145,7 @@ lazy_static! {
         m.insert("goto", TokenType::Goto);
         m.insert("if", TokenType::If);
         m.insert("in", TokenType::In);
+        m.insert("is", TokenType::Is);
         m.insert("integer", TokenType::Integer);
         m.insert("label", TokenType::Label);
         m.insert("mod", TokenType::Mod);
@@ -303,12 +306,15 @@ impl<'stream> Lexer<'stream> {
             '/' => self.add_token(TokenType::Slash),
             '(' => self.add_token(TokenType::LeftParen),
             ')' => self.add_token(TokenType::RightParen),
-            ':' => self.add_token(TokenType::Colon),
+            '[' => self.add_token(TokenType::LeftBrack),
+            ']' => self.add_token(TokenType::RightBrack),
+            '=' => self.add_token(TokenType::Equal),
             ',' => self.add_token(TokenType::Comma),
             '<' => {
                 self.advance();
                 match self.peek() {
                     Some('=') => self.add_token(TokenType::LessEqual),
+                    Some('>') => self.add_token(TokenType::NotEqual),
                     _ => self.add_token(TokenType::Less),
                 }
             },
@@ -319,18 +325,18 @@ impl<'stream> Lexer<'stream> {
                     _ => self.add_token(TokenType::Greater),
                 }
             },
-            '=' => {
+            ':' => {
                 self.advance();
                 match self.peek() {
-                    Some('=') => self.add_token(TokenType::Equal),
-                    _ => self.add_token(TokenType::Assignment),
+                    Some('=') => self.add_token(TokenType::Assignment),
+                    _ => self.add_token(TokenType::Colon),
                 }
             },
-            '!' => {
+            '.' => {
                 self.advance();
                 match self.peek() {
-                    Some('=') => self.add_token(TokenType::GreaterEqual),
-                    _ => self.add_token(TokenType::Greater),
+                    Some('.') => self.add_token(TokenType::DotDot),
+                    _ => self.add_token(TokenType::Dot),
                 }
             },
             _ => return Some(false),

@@ -414,7 +414,11 @@ designatorItem               : '^'
                              | ('.' | '@') ident              //CHANGED added '@'
                              | ('<' genericTypeIdent (',' genericTypeIdent)* '>')       //ADDED for proc<sth, sth>.foo;
                              | '[' expressionList ']'
-                             | '(' (expression (colonConstruct)? (',' expression (colonConstruct)?)*)? ')' 
+                             | '(' parameterList ')'
+                             ;
+parameterList                : (actualParameter (',' actualParameter)*)? 
+                             ;
+actualParameter              : expression (colonConstruct)?
                              ;
 expressionList               : expression (',' expression)*
                              ;
