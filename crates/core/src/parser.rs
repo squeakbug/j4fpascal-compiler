@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 use crate::{
-    ast::{Expr, Stmt},
+    ast::{Block, CaseItem, CaseLabel, Declaration, Expr, Stmt},
     lexer::{Token, TokenType},
 };
 
@@ -12,17 +12,8 @@ pub struct Parser {
 
 #[derive(Error, Debug)]
 pub enum ParserError {
-    #[error("Unexpected character '{0}' at position {1}")]
-    UnexpectedCharacter(char, usize),
-
-    #[error("Invalid number format at position {0}")]
-    InvalidNumberFormat(usize),
-
-    #[error("Unterminated string literal at position {0}")]
-    UnterminatedStringLiteral(usize),
-
-    #[error("Unknown token at position {0}")]
-    UnknownToken(usize),
+    #[error("Unexpected token at position {0}")]
+    UnexpectedToken(usize),
 
     #[error("Unexpected EOF at position {0}")]
     UnexpectedEOF(usize),
@@ -36,6 +27,11 @@ impl Parser {
         }
     }
 
+    pub fn parse(&mut self, tokens: Vec<Token>) -> Result<Option<Block>, ParserError> {
+        self.istream = Some(tokens);
+        self.block()
+    }
+
     fn peek(&mut self) -> Option<Token> {
         self.istream.as_mut().unwrap().get(self.current).cloned()
     }
@@ -46,14 +42,14 @@ impl Parser {
         result
     }
 
-    fn consume(&mut self, token_type: TokenType) -> Result<(), ParserError> {
-        if let Some(token) = self.peek() {
-            if token.token_type == token_type {
-                self.advance();
-                return Ok(());
-            }
+    fn consume(&mut self, expected: TokenType) -> Result<Token, ParserError> {
+        match self.advance() {
+            Some(ref token@Token { ref token_type, .. }) if *token_type == expected => {
+                Ok(token.clone())
+            },
+            None => Err(ParserError::UnexpectedToken(self.current)),
+            _ => Err(ParserError::UnexpectedToken(self.current)),
         }
-        Err(ParserError::UnknownToken(self.current))
     }
 
     fn synchronize(&mut self) {
@@ -75,147 +71,333 @@ impl Parser {
         }
     }
 
-    pub fn parse(&mut self, tokens: Vec<Token>) -> Result<Stmt, ParserError> {
-        self.istream = Some(tokens);
-        self.statement()
+    fn block(&mut self) -> Result<Option<Block>, ParserError> {
+        let mut decl_sections = vec![];
+        while let Some(declaration) = self.decl_section()? {
+            decl_sections.push(declaration);
+        }
+        let body = Box::new(self.compound_statement()?.unwrap());
+        Ok(Some(Block {
+            decl_sections,
+            body,
+        }))
     }
 
-    fn statement(&mut self) -> Result<Stmt, ParserError> {
+    fn decl_section(&mut self) -> Result<Option<Declaration>, ParserError> {
+        self.procedure_declaration()
+    }
+
+    fn procedure_declaration(&mut self) -> Result<Option<Declaration>, ParserError> {
+        Ok(None)
+    }
+
+    fn statement(&mut self) -> Result<Option<Stmt>, ParserError> {
         if let Some(token) = self.peek() {
             if token.token_type == TokenType::Label {
                 self.advance();
                 self.consume(TokenType::Colon)?;
-                let statement = self.unlabeled_statement()?;
-                Ok(Stmt::Labeled {
-                    label: token,
-                    statement: Box::new(statement),
-                })
+                match self.unlabeled_statement()? {
+                    Some(statement) => {
+                        return Ok(Some(Stmt::Labeled {
+                            label: token,
+                            statement: Box::new(statement),
+                        }));
+                    },
+                    None => return Err(ParserError::UnexpectedToken(self.current)),
+                }
             } else {
-                self.unlabeled_statement()
+                return self.unlabeled_statement();
             }
+        }
+        Ok(None)
+    }
+
+    fn unlabeled_statement(&mut self) -> Result<Option<Stmt>, ParserError> {
+        if let Some(stmt) = self.if_statement()? {
+            Ok(Some(stmt))
+        } else if let Some(stmt) = self.case_statement()? {
+            Ok(Some(stmt))
+        } else if let Some(stmt) = self.repeat_statement()? {
+            Ok(Some(stmt))
+        } else if let Some(stmt) = self.while_statement()? {
+            Ok(Some(stmt))
+        } else if let Some(stmt) = self.for_statement()? {
+            Ok(Some(stmt))
+        } else if let Some(stmt) = self.with_statement()? {
+            Ok(Some(stmt))
+        } else if let Some(stmt) = self.try_statement()? {
+            Ok(Some(stmt))
+        } else if let Some(stmt) = self.raise_statement()? {
+            Ok(Some(stmt))
+        } else if let Some(stmt) = self.compound_statement()? {
+            Ok(Some(stmt))
+        } else if let Some(stmt) = self.simple_statement()? {
+            Ok(Some(stmt))
         } else {
-            return Err(ParserError::UnexpectedEOF(self.current));
+            Ok(None)
         }
     }
 
-    fn unlabeled_statement(&mut self) -> Result<Stmt, ParserError> {
-        if let Ok(statement) = self.simple_statement() {
-            Ok(statement)
-        } else if let Ok(statement) = self.structured_statement() {
-            Ok(statement)
-        } else {
-            Err(ParserError::UnterminatedStringLiteral(self.current))
+    fn goto_statement(&mut self) -> Result<Option<Stmt>, ParserError> {
+        if let Some(token) = self.peek() {
+            match token {
+                Token { token_type: TokenType::Goto, .. } => {
+                    return Ok(Some(Stmt::Goto { label: token }))
+                },
+                Token { token_type: TokenType::Break, .. } => {
+                    return Ok(Some(Stmt::Break))
+                },
+                Token { token_type: TokenType::Continue, .. } => {
+                    return Ok(Some(Stmt::Continue))
+                },
+                _ => return Ok(None)
+            }
         }
-    }
-
-    fn simple_statement(&mut self) -> Result<Stmt, ParserError> {
-        if let Ok(statement) = self.assigmnent_statement() {
-            Ok(statement)
-        } else if let Ok(statement) = self.procedure_statement() {
-            Ok(statement)
-        } else if let Ok(statement) = self.goto_statement() {
-            Ok(statement)
-        } else if let Ok(statement) = self.empty_statement() {
-            Ok(statement)
-        } else {
-            Err(ParserError::UnterminatedStringLiteral(self.current))
-        }
+        Ok(None)
     }
 
     // TODO: add structured identifier
-    fn assigmnent_statement(&mut self) -> Result<Stmt, ParserError> {
+    fn simple_statement(&mut self) -> Result<Option<Stmt>, ParserError> {
+        if let Some(stmt) = self.goto_statement()? {
+            return Ok(Some(stmt));
+        }
         match self.peek() {
             Some(token@Token { token_type: TokenType::Identifier(_), .. }) => {
                 self.advance();
                 self.consume(TokenType::Assignment)?;
-                Ok(Stmt::Assigment {
+                Ok(Some(Stmt::Assigment {
                     left: token,
                     right: Box::new(self.expression()?),
+                }))
+            },
+            None => Err(ParserError::UnexpectedEOF(self.current)),
+            _ => Ok(None),
+        }
+    }
+
+    fn procedure_call(&mut self) -> Result<Stmt, ParserError> {
+        match self.peek() {
+            Some(token@Token { token_type: TokenType::Identifier(_),.. }) => {
+                self.advance();
+                self.consume(TokenType::LeftParen)?;
+                let parameter_list = self.parameter_list()?;
+                self.consume(TokenType::RightParen)?;
+                Ok(Stmt::ProcedureCall {
+                    name: token.clone(),
+                    arguments: parameter_list,
                 })
             }
             _ => Err(ParserError::UnexpectedEOF(self.current)),
         }
     }
 
-    fn procedure_statement(&mut self) -> Result<Stmt, ParserError> {
-        todo!()
-    }
-
-    fn goto_statement(&mut self) -> Result<Stmt, ParserError> {
-        todo!()
-    }
-
-    fn empty_statement(&mut self) -> Result<Stmt, ParserError> {
-        todo!()
-    }
-
-    fn structured_statement(&mut self) -> Result<Stmt, ParserError> {
-        if let Ok(statement) = self.compound_statement() {
-            Ok(statement)
-        } else if let Ok(statement) = self.conditional_statement() {
-            Ok(statement)
-        } else if let Ok(statement) = self.repetetive_statement() {
-            Ok(statement)
-        } else if let Ok(statement) = self.with_statement() {
-            Ok(statement)
-        } else {
-            Err(ParserError::UnterminatedStringLiteral(self.current))
-        }
-    }
-
-    fn compound_statement(&mut self) -> Result<Stmt, ParserError> {
-        self.consume(TokenType::Begin)?;
-        let mut statements = vec![Box::new(self.statement()?)];
+    fn parameter_list(&mut self) -> Result<Vec<(Box<Expr>, Vec<Box<Expr>>)>, ParserError> {
+        let mut arguments = vec![];
         while let Some(token) = self.peek() {
-            if token.token_type == TokenType::Semicolon {
-                self.advance();
-                let statement = Box::new(self.statement()?);
-                statements.push(statement);
+            if token.token_type == TokenType::RightParen {
+                break;
+            }
+            let argument = self.actual_parameter()?;
+            arguments.push(argument);
+            self.consume(TokenType::Comma)?;
+        }
+        Ok(arguments)
+    }
+
+    fn actual_parameter(&mut self) -> Result<(Box<Expr>, Vec<Box<Expr>>), ParserError> {
+        let parameter = Box::new(self.expression()?);
+        let mut parameter_width = vec![];
+        while let Some(token) = self.peek() {
+            if token.token_type == TokenType::Colon {
+                let expression = self.parameter_width()?;
+                parameter_width.push(expression);
             }
         }
+        Ok((parameter, parameter_width))
+    }
+
+    fn parameter_width(&mut self) -> Result<Box<Expr>, ParserError> {
+        self.consume(TokenType::Colon)?;
+        let expression = self.expression()?;
+        Ok(Box::new(expression))
+    }
+
+    fn statement_list(&mut self) -> Result<Vec<Box<Stmt>>, ParserError> {
+        let mut statements = vec![];
+        if let Some(statement) = self.statement()? {
+            statements.push(Box::new(statement));
+            while let Some(token) = self.peek() {
+                if token.token_type == TokenType::Semicolon {
+                    self.advance();
+                    let statement = self.statement()?;
+                    match statement {
+                        Some(statement) => statements.push(Box::new(statement)),
+                        None => continue,
+                    }
+                } else {
+                    break;
+                }
+            }
+        }
+        return Ok(statements);
+    }
+
+    fn compound_statement(&mut self) -> Result<Option<Stmt>, ParserError> {
+        self.consume(TokenType::Begin)?;
+        let statements = self.statement_list()?;
         self.consume(TokenType::End)?;
-        Ok(Stmt::Compound {
+        Ok(Some(Stmt::Compound {
             statements
-        })
+        }))
     }
 
-    fn conditional_statement(&mut self) -> Result<Stmt, ParserError> {
-        self.if_statement()
-    }
-
-    fn if_statement(&mut self) -> Result<Stmt, ParserError> {
-        self.consume(TokenType::If)?;
-        let condition = Box::new(self.expression()?);
-        self.consume(TokenType::Then)?;
-        let then_branch = Box::new(self.statement()?);
+    fn if_statement(&mut self) -> Result<Option<Stmt>, ParserError> {
         if let Some(token) = self.peek() {
-            if token.token_type == TokenType::Else {
+            if token.token_type == TokenType::If {
                 self.advance();
-                let else_branch = Some(Box::new(self.statement()?));
-                return Ok(Stmt::If {
-                    condition,
-                    then_branch,
-                    else_branch,
-                })
+                let condition = Box::new(self.expression()?);
+                self.consume(TokenType::Then)?;
+                let then_branch = Box::new(self.statement()?.unwrap());
+                let mut else_branch = None;
+                if let Some(token) = self.peek() {
+                    if token.token_type == TokenType::Else {
+                        self.advance();
+                        else_branch = Some(Box::new(self.statement()?.unwrap()));
+                    }
+                    return Ok(Some(Stmt::If {
+                        condition,
+                        then_branch,
+                        else_branch,
+                    }));
+                }
             }
         }
-        Ok(Stmt::If {
-            condition,
-            then_branch,
-            else_branch: None,
+        Ok(None)
+    }
+
+    fn case_label(&mut self) -> Result<CaseLabel, ParserError> {
+        let from = Box::new(self.expression()?);
+        if let Some(token) = self.peek() {
+            if token.token_type == TokenType::DotDot {
+                self.advance();
+                let to = Box::new(self.expression()?);
+                return Ok(CaseLabel::Range((from, to)));
+            }
+        }
+        return Ok(CaseLabel::Simple(from));
+    }
+
+    fn case_item(&mut self) -> Result<CaseItem, ParserError> {
+        let mut labels = vec![self.case_label()?];
+        while let Some(token) = self.peek() {
+            if token.token_type == TokenType::Comma {
+                self.advance();
+                labels.push(self.case_label()?);
+            } else {
+                break;
+            }
+        }
+        self.consume(TokenType::Colon)?;
+        let statement = Box::new(self.statement()?.unwrap());
+        Ok(CaseItem {
+            labels,
+            statement,
         })
     }
 
-    fn case_statement(&mut self) -> Result<Stmt, ParserError> {
-        todo!()
+    fn case_statement(&mut self) -> Result<Option<Stmt>, ParserError> {
+        if let Some(token) = self.peek() {
+            if token.token_type == TokenType::Case {
+                self.advance();
+                let condition = Box::new(self.expression()?);
+                self.consume(TokenType::Of)?;
+                let mut case_items = vec![];
+                while let Ok(item) = self.case_item() {
+                    case_items.push(Box::new(item));
+                }
+                let mut else_branch = None;
+                if let Some(token) = self.peek() {
+                    if token.token_type == TokenType::Else {
+                        self.advance();
+                        else_branch = Some(Box::new(self.statement()?.unwrap()));
+                    }
+                }
+                self.consume(TokenType::End)?;
+                return Ok(Some(Stmt::Case { 
+                    condition, 
+                    case_items,
+                    else_branch,
+                }));
+            }
+        }
+        Ok(None)
     }
 
-    fn repetetive_statement(&mut self) -> Result<Stmt, ParserError> {
-        todo!()
+    fn repeat_statement(&mut self) -> Result<Option<Stmt>, ParserError> {
+        if let Some(token) = self.peek() {
+            if token.token_type == TokenType::Repeat {
+                self.advance();
+                let statements = self.statement_list()?;
+                self.consume(TokenType::Until)?;
+                let expr = self.expression()?;
+                return Ok(Some(Stmt::Repeat {
+                    statements,
+                    condition: Box::new(expr),
+                }));
+            }
+        }
+        Ok(None)
     }
 
-    fn with_statement(&mut self) -> Result<Stmt, ParserError> {
-        todo!()
+    fn while_statement(&mut self) -> Result<Option<Stmt>, ParserError> {
+        if let Some(token) = self.peek() {
+            if token.token_type == TokenType::While {
+                self.advance();
+                let condition = Box::new(self.expression()?);
+                self.consume(TokenType::Do)?;
+                let statement = Box::new(self.statement()?.unwrap());
+                return Ok(Some(Stmt::While {
+                    condition,
+                    statement,
+                }));
+            }
+        }
+        Ok(None)
+    }
+
+    fn for_statement(&mut self) -> Result<Option<Stmt>, ParserError> {
+        if let Some(token) = self.peek() {
+            if token.token_type == TokenType::For {
+                self.advance();
+                let var = Box::new(self.expression()?);
+                self.consume(TokenType::Assignment)?;
+                let init = Box::new(self.expression()?);
+                self.consume(TokenType::To)?;
+                let to = Box::new(self.expression()?);
+                self.consume(TokenType::Do)?;
+                let statement = Box::new(self.statement()?.unwrap());
+                return Ok(Some(Stmt::For {
+                    var,
+                    init,
+                    to,
+                    statement,
+                    is_down_to: false
+                }));
+            }
+        }
+        Ok(None)
+    }
+
+    fn with_statement(&mut self) -> Result<Option<Stmt>, ParserError> {
+        Ok(None)
+    }
+
+    fn try_statement(&mut self) -> Result<Option<Stmt>, ParserError> {
+        Ok(None)
+    }
+
+    fn raise_statement(&mut self) -> Result<Option<Stmt>, ParserError> {
+        Ok(None)
     }
 
     // Как же это убого выглядит

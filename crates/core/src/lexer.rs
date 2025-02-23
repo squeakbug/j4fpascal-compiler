@@ -47,6 +47,7 @@ pub enum TokenType {
     Assignment,
     Not,
     Comma,
+    DotDot,
 
     // Builtin types
     Boolean,
@@ -62,8 +63,10 @@ pub enum TokenType {
     // Keywords
     Array,
     Begin,
+    Break,
     Case,
     Const,
+    Continue,
     Do,
     Else,
     End,

@@ -13,6 +13,7 @@ Why do people use tools like Yacc, Flex, ANTLR, etc.? Recursive descent parsing 
 
 * [Rust compiler in Rust](https://github.com/rust-lang/rust)
 * [gleam compiler in Rust](https://github.com/gleam-lang/gleam)
+* [Free Pascal Compiler](https://gitlab.com/freepascal.org)
 
 * [Poline](https://github.com/cronokirby/poline)
 * [C compiler](https://github.com/ClementTsang/rustcc)
@@ -20,6 +21,6 @@ Why do people use tools like Yacc, Flex, ANTLR, etc.? Recursive descent parsing 
 ## Literature
 
 * [Red dragon]()
-* [Crafting interpreters]()
+* [Crafting interpreters](https://craftinginterpreters.com/)
 * [Мучник]()
 * []()

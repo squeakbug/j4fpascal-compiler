@@ -1,5 +1,6 @@
 use crate::lexer::Token;
 
+// This syntax tree is less complex, than parsing tree (that i don't form)
 #[derive(Debug)]
 pub enum Expr {
     Binary {
@@ -23,6 +24,18 @@ pub enum Expr {
 }
 
 #[derive(Debug)]
+pub enum CaseLabel {
+    Simple(Box<Expr>),
+    Range((Box<Expr>, Box<Expr>)),
+}
+
+#[derive(Debug)]
+pub struct CaseItem {
+    pub labels: Vec<CaseLabel>,
+    pub statement: Box<Stmt>,
+}
+
+#[derive(Debug)]
 pub enum Stmt {
     Labeled {
         label: Token,
@@ -41,16 +54,77 @@ pub enum Stmt {
         else_branch: Option<Box<Stmt>>,
     },
     Case {
-        condition: Box<Stmt>,
-        cases: Vec<(Box<Expr>, Box<Stmt>)>,
-    },
-    Repetetive {
         condition: Box<Expr>,
-        body: Box<Stmt>,
+        case_items: Vec<Box<CaseItem>>,
+        else_branch: Option<Box<Stmt>>,
     },
-    Procedure,
+    Repeat {
+        statements: Vec<Box<Stmt>>,
+        condition: Box<Expr>,
+    },
+    While {
+        condition: Box<Expr>,
+        statement: Box<Stmt>,
+    },
+    For {
+        var: Box<Expr>,
+        init: Box<Expr>,
+        to: Box<Expr>,
+        statement: Box<Stmt>,
+        is_down_to: bool,
+    },
+    ProcedureCall {
+        name: Token,
+        arguments: Vec<(Box<Expr>, Vec<Box<Expr>>)>,
+    },
     Goto {
         label: Token,
     },
+    Break,
+    Continue,
     Empty,
+}
+
+#[derive(Debug)]
+pub enum TypeDeclaration {
+    ArrayType {
+
+    },
+    RecordType {
+
+    },
+    SetType {
+
+    },
+    FileType {
+
+    },
+    ScalarType {
+        identifiers: Vec<String>,
+    },
+    SubrangeType {
+        from: Box<Token>,
+        to: Box<Token>,
+    },
+}
+
+#[derive(Debug)]
+pub enum Declaration {
+    Type(TypeDeclaration),
+    Variable {
+        name: Token,
+        var_type: TypeDeclaration,
+    },
+    Procedure {
+        name: Token,
+        parameters: Vec<Token>,
+        return_type: Option<TypeDeclaration>,
+        body: Block,
+    },
+}
+
+#[derive(Debug)]
+pub struct Block {
+    pub decl_sections: Vec<Declaration>,
+    pub body: Box<Stmt>,
 }
