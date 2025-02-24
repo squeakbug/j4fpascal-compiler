@@ -1,10 +1,25 @@
-use std::{borrow::Borrow, collections::HashMap, fmt};
+use std::{collections::HashMap, fmt};
 
-use core::{ast::{Expr, Stmt}, lexer::{self, Lexer, Token, TokenType}, parser::Parser};
+use core::{
+    ast::{Block, DeclSection, DesignatorItem, Expr, ProcedureDeclaration, Stmt, TypeDeclaration, UnlabeledStmt, VarDeclaration}, 
+    lexer::{self, Lexer, Token, TokenType}, 
+    parser::Parser
+};
 
 #[derive(Debug)]
 pub enum InterpreterError {
     NotImplemented,
+    UndefinedVariable,
+    AssigmentToNotDefinedVariable,
+    NoParentEnvironment,
+    NotCallable,
+}
+
+#[derive(Debug, Clone)]
+pub struct ProcedureValue {
+    name: String,
+    params: Vec<String>,
+    body: Block,
 }
 
 /// Result of tree-walking
@@ -14,16 +29,18 @@ pub enum Value {
     UnsignedReal(f64),
     String(String),
     Boolean(bool),
+    Procedure(ProcedureValue),
     Null,
 }
 
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Value::UnsignedInteger(num) => write!(f, "{}", num),
-            Value::UnsignedReal(num) => write!(f, "{}", num),
-            Value::String(s) => write!(f, "\"{}\"", s),
-            Value::Boolean(b) => write!(f, "{}", b),
+            Value::UnsignedInteger(num) => write!(f, "{:?}", num),
+            Value::UnsignedReal(num) => write!(f, "{:?}", num),
+            Value::String(s) => write!(f, "\"{:?}\"", s),
+            Value::Boolean(b) => write!(f, "{:?}", b),
+            Value::Procedure(p) => write!(f, "{:?}", p),
             Value::Null => write!(f, "null"),
         }
     }
@@ -31,8 +48,8 @@ impl fmt::Display for Value {
 
 #[derive(Debug, Clone)]
 pub struct Environment {
-    enclosing: Option<Box<Environment>>,
-    symbols: HashMap<String, Value>,
+    pub enclosing: Option<Box<Environment>>,
+    pub symbols: HashMap<String, Value>,
 }
 
 impl Environment {
@@ -50,70 +67,199 @@ impl Environment {
         }
     }
 
-    pub fn assign(&mut self, var: String, val: Value) {
-        self.symbols.insert(var, val);
+    pub fn define(&mut self, var: &str, val: Value) {
+        self.symbols.insert(var.to_owned(), val);
     }
 
-    pub fn get(&self, var: String) -> Option<Value> {
-        if let Some(val) = self.symbols.get(&var) {
-            Some(val.clone())
-        } else if self.enclosing.is_some() {
-            self.enclosing.as_ref().unwrap().get(var)
+    pub fn assign(&mut self, var: &str, val: Value) -> Result<(), InterpreterError> {
+        if let Some(sym) = self.symbols.get_mut(var) {
+            *sym = val;
+            Ok(())
+        } else if let Some(ref mut enclosing) = self.enclosing {
+            enclosing.assign(var, val)
         } else {
-            None
+            Err(InterpreterError::AssigmentToNotDefinedVariable)
         }
+    }
+
+    pub fn get(&self, var: &str) -> Option<Value> {
+        self.symbols.get(var).cloned()
+    }
+
+    pub fn take_enclosing(&mut self) -> Option<Box<Environment>> {
+        std::mem::replace(&mut self.enclosing, None)
     }
 }
 
 #[derive(Debug)]
 pub struct Interpreter {
-    environment: Option<Environment>,
+    environment: Box<Environment>,
 }
 
 impl Interpreter {
     pub fn new() -> Self {
         Interpreter {
-            environment: Some(Environment::new()),
+            environment: Box::new(Environment::new()),
+        }
+    }
+
+    fn scope_enter(&mut self) -> Result<(), InterpreterError> {
+        let old = std::mem::replace(&mut self.environment, Box::new(Environment::new()));
+        self.environment = Box::new(Environment::with_enclosing(old));
+        Ok(())
+    }
+
+    fn scope_exit(&mut self) -> Result<(), InterpreterError> {
+        self.environment = self.environment.as_mut().take_enclosing().ok_or(
+            InterpreterError::NoParentEnvironment
+        )?;
+        Ok(())
+    }
+
+    fn visit_type_declaration(&mut self, _decl: &TypeDeclaration) -> Result<(), InterpreterError> {
+        todo!()
+    }
+
+    fn visit_var_declaration(&mut self, _decl: &VarDeclaration) -> Result<(), InterpreterError> {
+        todo!()
+    }
+
+    fn visit_procedure_declaration(
+        &mut self, 
+        _decl: &ProcedureDeclaration
+    ) -> Result<(), InterpreterError> {
+        todo!()
+    }
+
+    fn visit_decl_section(&mut self, section: &DeclSection) -> Result<(), InterpreterError> {
+        match section {
+            DeclSection::Type(type_declarations) => {
+                for decl in type_declarations {
+                    self.visit_type_declaration(decl)?;
+                }
+                Ok(())
+            },
+            DeclSection::Variable(var_declarations) => {
+                for decl in var_declarations {
+                    self.visit_var_declaration(decl)?;
+                }
+                Ok(())
+            },
+            DeclSection::Procedure(procedure_declarations) => {
+                for decl in procedure_declarations {
+                    self.visit_procedure_declaration(decl)?;
+                }
+                Ok(())
+            },
         }
     }
 
     fn visit_statement(&mut self, stmt: &Box<Stmt>) -> Result<(), InterpreterError> {
-        match stmt.as_ref() {
-            Stmt::Assigment { left, right } => {
-                match left {
-                    Token { token_type: TokenType::Identifier(ref varname), .. } => {
-                        let value = self.visit_expr(right)?;
-                        self.environment.as_mut().map(|e| e.assign(varname.clone(), value));
-                        Ok(())
+        match stmt.statement.as_ref() {
+            UnlabeledStmt::Assigment { left, right } => {
+                let ident = left.name;
+                let value = self.visit_expr(right)?;
+                self.environment.assign(&ident, value);
+                Ok(())
+            },
+            UnlabeledStmt::ProcedureCall { designator } => {
+                let ident = designator.name;
+                let val = self.environment.get(&ident).ok_or(
+                    InterpreterError::UndefinedVariable
+                )?;
+                match val {
+                    Value::Procedure(proc) => {
+                        match designator.items.first() {
+                            Some(&DesignatorItem::Call { arguments }) => {
+                                self.scope_enter()?;
+                                for (param, arg) in proc.params.iter().zip(arguments) {
+                                    let value = self.visit_expr(&arg.0)?;
+                                    self.environment.define(param, value);
+                                }
+                                let proc_stmt = &proc.body.body;
+                                self.visit_statement(proc_stmt)?;
+                                self.scope_exit()?;
+                                Ok(())
+                            },
+                            None => Err(InterpreterError::NotImplemented),
+                        }
                     },
-                    _ => Err(InterpreterError::NotImplemented),
+                    _ => Err(InterpreterError::NotCallable),
                 }
             },
-            Stmt::If { condition, then_branch, else_branch } => {
+            UnlabeledStmt::Compound { statements } => {
+                self.scope_enter()?;
+                for statement in statements {
+                    self.visit_statement(statement)?;
+                }
+                self.scope_exit()?;
+                Ok(())
+            },
+            UnlabeledStmt::If { condition, then_branch, else_branch } => {
                 let condition_value = self.visit_expr(condition)?;
-                match condition_value {
+                self.scope_enter()?;
+                let result = match condition_value {
                     Value::Boolean(true) => {
                         self.visit_statement(then_branch)
                     },
                     Value::Boolean(false) => {
                         if let Some(else_branch) = else_branch {
-                            self.visit_statement(else_branch)
-                        } else {
-                            Ok(())
+                            self.visit_statement(else_branch)?;
                         }
+                        Ok(())
                     },
                     _ => Err(InterpreterError::NotImplemented),
-                }
+                };
+                self.scope_exit()?;
+                result
             },
-            Stmt::Compound { statements } => {
-                let old = std::mem::replace(&mut self.environment, None);
-                let new = Environment::with_enclosing(Box::new(old.clone().unwrap()));
-                self.environment = Some(new);
-                for statement in statements {
-                    self.visit_statement(statement)?;
-                }
-                self.environment = old;
+            UnlabeledStmt::Case { condition, case_items, else_branch } => {
                 Ok(())
+            },
+            UnlabeledStmt::Repeat { statements, condition } => {
+                self.scope_enter()?;
+                loop {
+                    for stmt in statements {
+                        self.visit_statement(stmt)?;
+                    }
+                    if self.visit_expr(condition)? == false {
+                        break;
+                    }
+                }
+                self.scope_exit()?;
+                Ok(())
+            },
+            UnlabeledStmt::While { condition, statement } => {
+                self.scope_enter()?;
+                while self.visit_expr(condition)? == true {
+                    self.visit_statement(stmt)?;
+                }
+                self.scope_exit()?;
+                Ok(())
+            },
+            UnlabeledStmt::For { var, init, to, statement, is_down_to } => {
+                self.scope_enter()?;
+                let init_val = self.visit_expr(init)?;
+                let var_name = var.name;
+                self.environment.assign(&var_name, init_val);
+                loop {
+                    if self.environment.get(&var_name) < to {
+                        self.visit_statement(stmt)?;
+                    } else {
+                        break;
+                    }
+                }
+                self.scope_exit()?;
+                Ok(())
+            },
+            UnlabeledStmt::Goto { label } => {
+                Err(InterpreterError::NotImplemented)
+            },
+            UnlabeledStmt::Break => {
+                Err(InterpreterError::NotImplemented)
+            },
+            UnlabeledStmt::Continue => {
+                Err(InterpreterError::NotImplemented)
             },
             _ => Err(InterpreterError::NotImplemented),
         }
@@ -184,7 +330,7 @@ impl Interpreter {
                     _ => Err(InterpreterError::NotImplemented),
                 }
             },
-            Expr::Variable { var } => {
+            Expr::Designator { designator } => {
                 match var {
                     Token { token_type: TokenType::Identifier(name), .. } => {
                         let val = self.environment.as_ref().unwrap().get(name.clone()).unwrap();
@@ -197,6 +343,13 @@ impl Interpreter {
         }
     }
 
+    fn visit_block(&mut self, block: &Box<Block>) -> Result<(), InterpreterError> {
+        for section in block.decl_sections.iter() {
+            self.visit_decl_section(section)?;
+        }
+        self.visit_statement(&block.body)
+    }
+
     pub fn eval(&mut self, exp: &str) -> Result<(), InterpreterError> {
         let mut lexer = Lexer::new();
         let mut parser = Parser::new();
@@ -207,8 +360,8 @@ impl Interpreter {
         dbg!(&tokens);
         let ast = parser.parse(tokens).map_err(|_err| {
             InterpreterError::NotImplemented
-        })?;
+        })?.unwrap();
         dbg!(&ast);
-        self.visit_statement(&Box::new(ast))
+        self.visit_block(&Box::new(ast))
     }
 }

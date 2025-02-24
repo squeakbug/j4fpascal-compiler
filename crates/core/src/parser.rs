@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 use crate::{
-    ast::{Block, CaseItem, CaseLabel, Declaration, Designator, DesignatorItem, Expr, Stmt},
+    ast::{Block, CaseItem, CaseLabel, DeclSection, Designator, DesignatorItem, Expr, ProcedureDeclaration, Stmt, UnlabeledStmt, VarDeclaration},
     lexer::{Token, TokenType},
 };
 
@@ -76,18 +76,22 @@ impl Parser {
         while let Some(declaration) = self.decl_section()? {
             decl_sections.push(declaration);
         }
-        let body = Box::new(self.compound_statement()?.unwrap());
+        let body = Box::new(self.compound_statement()?.unwrap().into());
         Ok(Some(Block {
             decl_sections,
             body,
         }))
     }
 
-    fn decl_section(&mut self) -> Result<Option<Declaration>, ParserError> {
-        self.procedure_declaration()
+    fn decl_section(&mut self) -> Result<Option<DeclSection>, ParserError> {
+        let mut declarations = vec![];
+        while let Some(declaration) = self.procedure_declaration()? {
+            declarations.push(declaration);
+        }
+        Ok(Some(DeclSection::Procedure(declarations)))
     }
 
-    fn procedure_declaration(&mut self) -> Result<Option<Declaration>, ParserError> {
+    fn procedure_declaration(&mut self) -> Result<Option<ProcedureDeclaration>, ParserError> {
         Ok(None)
     }
 
@@ -98,21 +102,24 @@ impl Parser {
                 self.consume(TokenType::Colon)?;
                 match self.unlabeled_statement()? {
                     Some(statement) => {
-                        return Ok(Some(Stmt::Labeled {
-                            label: token,
+                        return Ok(Some(Stmt {
+                            label: Some(token),
                             statement: Box::new(statement),
                         }));
                     },
                     None => return Err(ParserError::UnexpectedToken(self.current)),
                 }
             } else {
-                return self.unlabeled_statement();
+                return Ok(Some(Stmt {
+                    label: Some(token),
+                    statement: Box::new(self.unlabeled_statement()?.unwrap()),
+                }));
             }
         }
         Ok(None)
     }
 
-    fn unlabeled_statement(&mut self) -> Result<Option<Stmt>, ParserError> {
+    fn unlabeled_statement(&mut self) -> Result<Option<UnlabeledStmt>, ParserError> {
         if let Some(stmt) = self.if_statement()? {
             Ok(Some(stmt))
         } else if let Some(stmt) = self.case_statement()? {
@@ -138,17 +145,17 @@ impl Parser {
         }
     }
 
-    fn goto_statement(&mut self) -> Result<Option<Stmt>, ParserError> {
+    fn goto_statement(&mut self) -> Result<Option<UnlabeledStmt>, ParserError> {
         if let Some(token) = self.peek() {
             match token {
                 Token { token_type: TokenType::Goto, .. } => {
-                    return Ok(Some(Stmt::Goto { label: token }))
+                    return Ok(Some(UnlabeledStmt::Goto { label: token }))
                 },
                 Token { token_type: TokenType::Break, .. } => {
-                    return Ok(Some(Stmt::Break))
+                    return Ok(Some(UnlabeledStmt::Break))
                 },
                 Token { token_type: TokenType::Continue, .. } => {
-                    return Ok(Some(Stmt::Continue))
+                    return Ok(Some(UnlabeledStmt::Continue))
                 },
                 _ => return Ok(None)
             }
@@ -202,10 +209,10 @@ impl Parser {
         match self.peek() {
             Some(Token { token_type: TokenType::LeftParen,.. }) => {
                 self.advance();
-                let parameters = self.parameter_list()?;
+                let arguments = self.parameter_list()?;
                 self.consume(TokenType::RightParen)?;
                 Ok(Some(DesignatorItem::Call {
-                    parameters,
+                    arguments,
                 }))
             }
             _ => Err(ParserError::UnexpectedEOF(self.current)),
@@ -236,11 +243,11 @@ impl Parser {
         }
     }
 
-    fn qualified_ident(&mut self) -> Result<Option<Token>, ParserError> {
+    fn qualified_ident(&mut self) -> Result<Option<String>, ParserError> {
         match self.peek() {
-            Some(token@Token { token_type: TokenType::Identifier(_), .. }) => {
+            Some(Token { token_type: TokenType::Identifier(name), .. }) => {
                 self.advance();
-                return Ok(Some(token));
+                return Ok(Some(name));
             },
             None => Err(ParserError::UnexpectedEOF(self.current)),
             _ => Ok(None),
@@ -248,7 +255,7 @@ impl Parser {
     }
 
     fn designator(&mut self) -> Result<Option<Designator>, ParserError> {
-        let name = self.qualified_ident()?;
+        let name = self.qualified_ident()?.unwrap();
         let mut items = vec![];
         while let Some(item) = self.designator_item()? {
             items.push(item);
@@ -260,18 +267,18 @@ impl Parser {
     }
 
     // TODO: add structured identifier
-    fn simple_statement(&mut self) -> Result<Option<Stmt>, ParserError> {
+    fn simple_statement(&mut self) -> Result<Option<UnlabeledStmt>, ParserError> {
         if let Some(designator) = self.designator()? {
             if let Some(token) = self.peek() {
                 if token.token_type == TokenType::Assignment {
                     self.advance();
                     let expression = self.expression()?;
-                    return Ok(Some(Stmt::Assigment {
+                    return Ok(Some(UnlabeledStmt::Assigment {
                         left: designator,
                         right: Box::new(expression.unwrap()),
                     }));
                 } else {
-                    return Ok(Some(Stmt::ProcedureCall {
+                    return Ok(Some(UnlabeledStmt::ProcedureCall {
                         designator,
                     }));
                 }
@@ -302,16 +309,16 @@ impl Parser {
         return Ok(statements);
     }
 
-    fn compound_statement(&mut self) -> Result<Option<Stmt>, ParserError> {
+    fn compound_statement(&mut self) -> Result<Option<UnlabeledStmt>, ParserError> {
         self.consume(TokenType::Begin)?;
         let statements = self.statement_list()?;
         self.consume(TokenType::End)?;
-        Ok(Some(Stmt::Compound {
+        Ok(Some(UnlabeledStmt::Compound {
             statements
         }))
     }
 
-    fn if_statement(&mut self) -> Result<Option<Stmt>, ParserError> {
+    fn if_statement(&mut self) -> Result<Option<UnlabeledStmt>, ParserError> {
         if let Some(token) = self.peek() {
             if token.token_type == TokenType::If {
                 self.advance();
@@ -324,7 +331,7 @@ impl Parser {
                         self.advance();
                         else_branch = Some(Box::new(self.statement()?.unwrap()));
                     }
-                    return Ok(Some(Stmt::If {
+                    return Ok(Some(UnlabeledStmt::If {
                         condition,
                         then_branch,
                         else_branch,
@@ -365,7 +372,7 @@ impl Parser {
         })
     }
 
-    fn case_statement(&mut self) -> Result<Option<Stmt>, ParserError> {
+    fn case_statement(&mut self) -> Result<Option<UnlabeledStmt>, ParserError> {
         if let Some(token) = self.peek() {
             if token.token_type == TokenType::Case {
                 self.advance();
@@ -383,7 +390,7 @@ impl Parser {
                     }
                 }
                 self.consume(TokenType::End)?;
-                return Ok(Some(Stmt::Case { 
+                return Ok(Some(UnlabeledStmt::Case { 
                     condition, 
                     case_items,
                     else_branch,
@@ -393,14 +400,14 @@ impl Parser {
         Ok(None)
     }
 
-    fn repeat_statement(&mut self) -> Result<Option<Stmt>, ParserError> {
+    fn repeat_statement(&mut self) -> Result<Option<UnlabeledStmt>, ParserError> {
         if let Some(token) = self.peek() {
             if token.token_type == TokenType::Repeat {
                 self.advance();
                 let statements = self.statement_list()?;
                 self.consume(TokenType::Until)?;
                 let expr = self.expression()?.unwrap();
-                return Ok(Some(Stmt::Repeat {
+                return Ok(Some(UnlabeledStmt::Repeat {
                     statements,
                     condition: Box::new(expr),
                 }));
@@ -409,14 +416,14 @@ impl Parser {
         Ok(None)
     }
 
-    fn while_statement(&mut self) -> Result<Option<Stmt>, ParserError> {
+    fn while_statement(&mut self) -> Result<Option<UnlabeledStmt>, ParserError> {
         if let Some(token) = self.peek() {
             if token.token_type == TokenType::While {
                 self.advance();
                 let condition = Box::new(self.expression()?.unwrap());
                 self.consume(TokenType::Do)?;
                 let statement = Box::new(self.statement()?.unwrap());
-                return Ok(Some(Stmt::While {
+                return Ok(Some(UnlabeledStmt::While {
                     condition,
                     statement,
                 }));
@@ -425,18 +432,18 @@ impl Parser {
         Ok(None)
     }
 
-    fn for_statement(&mut self) -> Result<Option<Stmt>, ParserError> {
+    fn for_statement(&mut self) -> Result<Option<UnlabeledStmt>, ParserError> {
         if let Some(token) = self.peek() {
             if token.token_type == TokenType::For {
                 self.advance();
-                let var = Box::new(self.expression()?.unwrap());
+                let var = Box::new(self.designator()?.unwrap());
                 self.consume(TokenType::Assignment)?;
                 let init = Box::new(self.expression()?.unwrap());
                 self.consume(TokenType::To)?;
                 let to = Box::new(self.expression()?.unwrap());
                 self.consume(TokenType::Do)?;
                 let statement = Box::new(self.statement()?.unwrap());
-                return Ok(Some(Stmt::For {
+                return Ok(Some(UnlabeledStmt::For {
                     var,
                     init,
                     to,
@@ -448,15 +455,15 @@ impl Parser {
         Ok(None)
     }
 
-    fn with_statement(&mut self) -> Result<Option<Stmt>, ParserError> {
+    fn with_statement(&mut self) -> Result<Option<UnlabeledStmt>, ParserError> {
         Ok(None)
     }
 
-    fn try_statement(&mut self) -> Result<Option<Stmt>, ParserError> {
+    fn try_statement(&mut self) -> Result<Option<UnlabeledStmt>, ParserError> {
         Ok(None)
     }
 
-    fn raise_statement(&mut self) -> Result<Option<Stmt>, ParserError> {
+    fn raise_statement(&mut self) -> Result<Option<UnlabeledStmt>, ParserError> {
         Ok(None)
     }
 

@@ -1,6 +1,6 @@
 use crate::lexer::Token;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum DesignatorItem {
     Generic,
     Field {
@@ -10,18 +10,18 @@ pub enum DesignatorItem {
         indexes: Vec<Box<Expr>>,
     },
     Call {
-        parameters: Vec<(Box<Expr>, Vec<Box<Expr>>)>,
+        arguments: Vec<(Box<Expr>, Vec<Box<Expr>>)>,
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Designator {
-    pub name: Option<Token>,
+    pub name: String,
     pub items: Vec<DesignatorItem>,
 }
 
 // This syntax tree is less complex, than parsing tree (that i don't form)
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Expr {
     Binary {
         left: Box<Expr>,
@@ -40,24 +40,35 @@ pub enum Expr {
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum CaseLabel {
     Simple(Box<Expr>),
     Range((Box<Expr>, Box<Expr>)),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CaseItem {
     pub labels: Vec<CaseLabel>,
     pub statement: Box<Stmt>,
 }
 
-#[derive(Debug)]
-pub enum Stmt {
-    Labeled {
-        label: Token,
-        statement: Box<Stmt>,
-    },
+#[derive(Debug, Clone)]
+pub struct Stmt {
+    pub label: Option<Token>,
+    pub statement: Box<UnlabeledStmt>,
+}
+
+impl From<UnlabeledStmt> for Stmt {
+    fn from(value: UnlabeledStmt) -> Self {
+        Stmt {
+            label: None,
+            statement: Box::new(value),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum UnlabeledStmt {
     Assigment {
         left: Designator,
         right: Box<Expr>,
@@ -87,7 +98,7 @@ pub enum Stmt {
         statement: Box<Stmt>,
     },
     For {
-        var: Box<Expr>,
+        var: Box<Designator>,
         init: Box<Expr>,
         to: Box<Expr>,
         statement: Box<Stmt>,
@@ -98,10 +109,9 @@ pub enum Stmt {
     },
     Break,
     Continue,
-    Empty,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TypeDeclaration {
     ArrayType {
 
@@ -124,23 +134,29 @@ pub enum TypeDeclaration {
     },
 }
 
-#[derive(Debug)]
-pub enum Declaration {
-    Type(TypeDeclaration),
-    Variable {
-        name: Token,
-        var_type: TypeDeclaration,
-    },
-    Procedure {
-        name: Token,
-        parameters: Vec<Token>,
-        return_type: Option<TypeDeclaration>,
-        body: Block,
-    },
+#[derive(Debug, Clone)]
+pub struct VarDeclaration {
+    pub name: Token,
+    pub var_type: TypeDeclaration,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
+pub struct ProcedureDeclaration {
+    pub name: Token,
+    pub parameters: Vec<Token>,
+    pub return_type: Option<TypeDeclaration>,
+    pub body: Block,
+}
+
+#[derive(Debug, Clone)]
+pub enum DeclSection {
+    Type (Vec<TypeDeclaration>),
+    Variable (Vec<VarDeclaration>),
+    Procedure (Vec<ProcedureDeclaration>),
+}
+
+#[derive(Debug, Clone)]
 pub struct Block {
-    pub decl_sections: Vec<Declaration>,
+    pub decl_sections: Vec<DeclSection>,
     pub body: Box<Stmt>,
 }
