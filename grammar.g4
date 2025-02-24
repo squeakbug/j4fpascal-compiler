@@ -382,25 +382,25 @@ expression                   : anonymousExpression
 anonymousExpression          : 'procedure' (formalParameterSection)? block
                              | 'function' (formalParameterSection)? ':' typeDecl block
                              ;
-simpleExpression             : factor (operator factor)*
+simpleExpression             : signedFactor (operator signedFactor)*
+                             ;
+signedFactor                 : ('+' | '-')? factor
                              ;
 factor                       : '@' factor
                              | DOUBLEAT factor       // used to get address of proc var
                              | 'not' factor
-                             | '+' factor
-                             | '-' factor
                              | '^' ident           // geeft volgnummer van letter
-                             | intNum
-                             | realNum
-                             | ( TkAsmHexNum          // Alleen in asm statement
-                             | 'true'
-                             | 'false'
-                             | 'nil' )
+                             | unsignedConstant
+                             | TkAsmHexNum          // Alleen in asm statement
+                             | bool_
                              | '(' expression ')' ('^')? ('.' expression)?        //CHANGED, added  ('^')? ('.' qualifiedIdent)?
-                             | stringFactor
                              | setSection
                              | designator
                              | typeId '(' expression ')'
+                             ;
+unsignedConstant             : intNum | realNum | stringFactor | 'nil'
+                             ;
+bool_                        : 'true' | 'false'
                              ;
 stringFactor                 : ControlString (QuotedString ControlString)* (QuotedString)?
                              | QuotedString (ControlString QuotedString)* (ControlString)?

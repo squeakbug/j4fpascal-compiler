@@ -162,7 +162,7 @@ impl Parser {
             if let Some(token) = self.peek() {
                 if token.token_type == TokenType::Colon {
                     self.advance();
-                    let expression = Box::new(self.expression()?);
+                    let expression = Box::new(self.expression()?.unwrap());
                     expressions.push(expression)
                 } else {
                     break;
@@ -173,7 +173,7 @@ impl Parser {
     }
 
     fn actual_parameter(&mut self) -> Result<Option<(Box<Expr>, Vec<Box<Expr>>)>, ParserError> {
-        let parameter = Box::new(self.expression()?);
+        let parameter = Box::new(self.expression()?.unwrap());
         let colon_construct = self.colon_construct()?;
         Ok(Some((parameter, colon_construct)))
     }
@@ -268,7 +268,7 @@ impl Parser {
                     let expression = self.expression()?;
                     return Ok(Some(Stmt::Assigment {
                         left: designator,
-                        right: Box::new(expression),
+                        right: Box::new(expression.unwrap()),
                     }));
                 } else {
                     return Ok(Some(Stmt::ProcedureCall {
@@ -315,7 +315,7 @@ impl Parser {
         if let Some(token) = self.peek() {
             if token.token_type == TokenType::If {
                 self.advance();
-                let condition = Box::new(self.expression()?);
+                let condition = Box::new(self.expression()?.unwrap());
                 self.consume(TokenType::Then)?;
                 let then_branch = Box::new(self.statement()?.unwrap());
                 let mut else_branch = None;
@@ -336,11 +336,11 @@ impl Parser {
     }
 
     fn case_label(&mut self) -> Result<CaseLabel, ParserError> {
-        let from = Box::new(self.expression()?);
+        let from = Box::new(self.expression()?.unwrap());
         if let Some(token) = self.peek() {
             if token.token_type == TokenType::DotDot {
                 self.advance();
-                let to = Box::new(self.expression()?);
+                let to = Box::new(self.expression()?.unwrap());
                 return Ok(CaseLabel::Range((from, to)));
             }
         }
@@ -369,7 +369,7 @@ impl Parser {
         if let Some(token) = self.peek() {
             if token.token_type == TokenType::Case {
                 self.advance();
-                let condition = Box::new(self.expression()?);
+                let condition = Box::new(self.expression()?.unwrap());
                 self.consume(TokenType::Of)?;
                 let mut case_items = vec![];
                 while let Ok(item) = self.case_item() {
@@ -399,7 +399,7 @@ impl Parser {
                 self.advance();
                 let statements = self.statement_list()?;
                 self.consume(TokenType::Until)?;
-                let expr = self.expression()?;
+                let expr = self.expression()?.unwrap();
                 return Ok(Some(Stmt::Repeat {
                     statements,
                     condition: Box::new(expr),
@@ -413,7 +413,7 @@ impl Parser {
         if let Some(token) = self.peek() {
             if token.token_type == TokenType::While {
                 self.advance();
-                let condition = Box::new(self.expression()?);
+                let condition = Box::new(self.expression()?.unwrap());
                 self.consume(TokenType::Do)?;
                 let statement = Box::new(self.statement()?.unwrap());
                 return Ok(Some(Stmt::While {
@@ -429,11 +429,11 @@ impl Parser {
         if let Some(token) = self.peek() {
             if token.token_type == TokenType::For {
                 self.advance();
-                let var = Box::new(self.expression()?);
+                let var = Box::new(self.expression()?.unwrap());
                 self.consume(TokenType::Assignment)?;
-                let init = Box::new(self.expression()?);
+                let init = Box::new(self.expression()?.unwrap());
                 self.consume(TokenType::To)?;
-                let to = Box::new(self.expression()?);
+                let to = Box::new(self.expression()?.unwrap());
                 self.consume(TokenType::Do)?;
                 let statement = Box::new(self.statement()?.unwrap());
                 return Ok(Some(Stmt::For {
@@ -465,8 +465,8 @@ impl Parser {
     }
 
     // Как же это убого выглядит
-    fn expression(&mut self) -> Result<Expr, ParserError> {
-        let mut expr = self.simple_expression()?;
+    fn expression(&mut self) -> Result<Option<Expr>, ParserError> {
+        let mut expr = self.simple_expression()?.unwrap();
         if let Some(token) = self.peek() {
             match token.token_type {
                 TokenType::Equal 
@@ -477,7 +477,7 @@ impl Parser {
                 | TokenType::GreaterEqual
                 | TokenType::In => {
                     self.advance();
-                    let right = self.expression()?;
+                    let right = self.expression()?.unwrap();
                     expr = Expr::Binary {
                         left: Box::new(expr),
                         operator: token.clone(),
@@ -487,16 +487,16 @@ impl Parser {
                 _ => { },
             }
         }
-        Ok(expr)
+        Ok(Some(expr))
     }
 
-    fn simple_expression(&mut self) -> Result<Expr, ParserError> {
-        let mut expr = self.term()?;
+    fn simple_expression(&mut self) -> Result<Option<Expr>, ParserError> {
+        let mut expr = self.term()?.unwrap();
         if let Some(token) = self.peek() {
             match token.token_type {
                 TokenType::Plus | TokenType::Minus | TokenType::Or => {
                     self.advance();
-                    let right = self.simple_expression()?;
+                    let right = self.simple_expression()?.unwrap();
                     expr = Expr::Binary {
                         left: Box::new(expr),
                         operator: token.clone(),
@@ -506,18 +506,18 @@ impl Parser {
                 _ => { },
             }
         }
-        Ok(expr)
+        Ok(Some(expr))
     }
 
-    fn term(&mut self) -> Result<Expr, ParserError> {
-        let mut expr = self.signed_factor()?;
+    fn term(&mut self) -> Result<Option<Expr>, ParserError> {
+        let mut expr = self.signed_factor()?.unwrap();
         while let Some(token) = self.peek() {
             match token.token_type {
                 TokenType::Star | TokenType::Slash 
                 | TokenType::Div | TokenType::Mod
                 | TokenType::And => {
                     self.advance();
-                    let right = self.term()?;
+                    let right = self.term()?.unwrap();
                     expr = Expr::Binary {
                         left: Box::new(expr),
                         operator: token.clone(),
@@ -527,19 +527,19 @@ impl Parser {
                 _ => break,
             }
         }
-        Ok(expr)
+        Ok(Some(expr))
     }
 
-    fn signed_factor(&mut self) -> Result<Expr, ParserError> {
+    fn signed_factor(&mut self) -> Result<Option<Expr>, ParserError> {
         if let Some(token) = self.peek() {
             match token.token_type {
                 TokenType::Plus | TokenType::Minus => {
                     self.advance();
-                    let right = self.factor()?;
-                    Ok(Expr::Unary {
+                    let right = self.factor()?.unwrap();
+                    Ok(Some(Expr::Unary {
                         operator: token.clone(),
                         right: Box::new(right),
-                    })
+                    }))
                 },
                 _ => self.factor()
             }
@@ -549,27 +549,54 @@ impl Parser {
     }
 
     /// TODO: необходимо разработать для себя "особые" методы анализа кода на Rust
-    fn factor(&mut self) -> Result<Expr, ParserError> {
-        match self.peek() {
-            // variable
+    fn factor(&mut self) -> Result<Option<Expr>, ParserError> {
+        let result = match self.peek() {
+            // '@' factor
             Some(token@Token {
-                token_type: TokenType::Identifier(_),
-               ..
-            }) => {
-                self.advance();
-                Ok(Expr::Variable {
-                    var: token.clone(),
-                })
-            },
-            // LPAREN expression RPAREN
-            Some(Token {
-                token_type: TokenType::LeftParen,
+                token_type: TokenType::Bleat,
                 ..
             }) => {
                 self.advance();
-                let expr = self.expression()?;
-                self.consume(TokenType::RightParen)?;
-                Ok(expr)
+                let expr = self.factor()?.unwrap();
+                Ok(Some(Expr::Unary {
+                    operator: token.clone(),
+                    right: Box::new(expr),
+                }))
+            },
+            // DOUBLEAT factor
+            Some(token@Token {
+                token_type: TokenType::DoubleBleat,
+                ..
+            }) => {
+                self.advance();
+                let expr = self.factor()?;
+                Ok(Some(Expr::Literal {
+                    value: token.clone(),
+                }))
+            },
+            // 'not' factor
+            Some(token@Token {
+                token_type: TokenType::Not,
+                ..
+            }) => {
+                self.advance();
+                let expr = self.factor()?.unwrap();
+                Ok(Some(Expr::Unary {
+                    operator: token.clone(),
+                    right: Box::new(expr),
+                }))
+            },
+            // '^' factor
+            Some(token@Token {
+                token_type: TokenType::Pointer2,
+                ..
+            }) => {
+                self.advance();
+                let expr = self.factor()?.unwrap();
+                Ok(Some(Expr::Unary {
+                    operator: token.clone(),
+                    right: Box::new(expr),
+                }))
             },
             // unsignedConstant
             Some(
@@ -583,21 +610,9 @@ impl Parser {
                 },
             ) => {
                 self.advance();
-                Ok(Expr::Literal {
+                Ok(Some(Expr::Literal {
                     value: token.clone(),
-                })
-            },
-            // NOT factor
-            Some(token@Token {
-                token_type: TokenType::Not,
-                ..
-            }) => {
-                self.advance();
-                let expr = self.factor()?;
-                Ok(Expr::Unary {
-                    operator: token.clone(),
-                    right: Box::new(expr),
-                })
+                }))
             },
             // bool_
             Some(
@@ -609,11 +624,30 @@ impl Parser {
                 },
             ) => {
                 self.advance();
-                Ok(Expr::Literal {
+                Ok(Some(Expr::Literal {
                     value: token.clone(),
-                })
+                }))
             },
-            _ => Err(ParserError::UnexpectedEOF(0)),
+            // LPAREN expression RPAREN
+            Some(Token {
+                token_type: TokenType::LeftParen,
+                ..
+            }) => {
+                self.advance();
+                let expr = self.expression()?.unwrap();
+                self.consume(TokenType::RightParen)?;
+                Ok(Some(expr))
+            },
+            None => Err(ParserError::UnexpectedEOF(self.current)),
+            _ => Ok(None),
+        };
+
+        if let Some(result) = result? {
+            Ok(Some(result))
+        } else if let Some(designator) = self.designator()? {
+            Ok(Some(Expr::Designator { designator }))
+        } else {
+            Ok(None)
         }
     }
 }

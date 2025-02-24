@@ -47,8 +47,11 @@ pub enum TokenType {
     Assignment,
     Not,
     Comma,
+    Bleat,
+    DoubleBleat,
     Dot,
     DotDot,
+    Pointer2, // '^'
 
     // Builtin types
     Boolean,
@@ -337,6 +340,13 @@ impl<'stream> Lexer<'stream> {
                 match self.peek() {
                     Some('.') => self.add_token(TokenType::DotDot),
                     _ => self.add_token(TokenType::Dot),
+                }
+            },
+            '@' => {
+                self.advance();
+                match self.peek() {
+                    Some('@') => self.add_token(TokenType::DoubleBleat),
+                    _ => self.add_token(TokenType::Bleat),
                 }
             },
             _ => return Some(false),

@@ -3,6 +3,9 @@ use crate::lexer::Token;
 #[derive(Debug)]
 pub enum DesignatorItem {
     Generic,
+    Field {
+        name: Token,
+    },
     ArrayAccess {
         indexes: Vec<Box<Expr>>,
     },
@@ -29,11 +32,11 @@ pub enum Expr {
         operator: Token,
         right: Box<Expr>,
     },
-    Grouping {
-        expression: Box<Expr>,
-    },
     Literal {
         value: Token,
+    },
+    Designator {
+        designator: Designator,
     },
 }
 
