@@ -1,2 +1,3 @@
 * use ecow::EcoString in lexer
 * use rpds for persistent environment stack
+* use prefix trees for scanning/autocompletion
