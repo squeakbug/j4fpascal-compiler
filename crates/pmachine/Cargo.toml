@@ -1,0 +1,8 @@
+[package]
+name = "pmachine"
+description = "Virtual machine for portable code execution"
+version = "0.0.1"
+authors = ["squeakbug <squeakbug73@outlook.com>"]
+edition = "2021"
+
+[dependencies]
