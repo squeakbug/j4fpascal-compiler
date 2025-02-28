@@ -142,10 +142,10 @@ pub struct VarDeclaration {
 
 #[derive(Debug, Clone)]
 pub struct ProcedureDeclaration {
-    pub name: Token,
-    pub parameters: Vec<Token>,
+    pub name: String,
+    pub params: Vec<(String, String)>,
     pub return_type: Option<TypeDeclaration>,
-    pub body: Block,
+    pub body: Box<Stmt>,
 }
 
 #[derive(Debug, Clone)]

@@ -1,7 +1,11 @@
 use std::{collections::HashMap, fmt};
 
 use core::{
-    ast::{Block, DeclSection, DesignatorItem, Expr, ProcedureDeclaration, Stmt, TypeDeclaration, UnlabeledStmt, VarDeclaration}, 
+    ast::{
+        Block, DeclSection, DesignatorItem, Expr, 
+        ProcedureDeclaration, Stmt, TypeDeclaration, 
+        UnlabeledStmt, VarDeclaration
+    },
     lexer::{self, Lexer}, 
     parser::Parser
 };
@@ -14,13 +18,56 @@ pub enum InterpreterError {
     NoParentEnvironment,
     NotCallable,
     MismatchedTypes,
+    MismathedArgumentsCount,
 }
 
 #[derive(Debug, Clone)]
 pub struct ProcedureValue {
-    name: String,
-    params: Vec<String>,
-    body: Block,
+    pub name: String,
+    pub params: Vec<(String, String)>,
+    pub body: Box<Stmt>,
+}
+
+pub trait Callable {
+    fn call(
+        &mut self,
+        executor: &mut Interpreter, 
+        args: Vec<Value>
+    ) -> Result<(), InterpreterError>;
+    fn arity(&self) -> usize;
+}
+
+pub struct WriteProcedureValue;
+
+impl Callable for WriteProcedureValue {
+    fn call(
+        &mut self, 
+        executor: &mut Interpreter, 
+        args: Vec<Value>
+    ) -> Result<(), InterpreterError> {
+        print!("{:?}", args);
+        Ok(())
+    }
+
+    fn arity(&self) -> usize { 1 }
+}
+
+impl Callable for ProcedureValue {
+    fn call(
+        &mut self, 
+        executor: &mut Interpreter, 
+        args: Vec<Value>
+    ) -> Result<(), InterpreterError> {
+        executor.scope_enter()?;
+        for (param, value) in self.params.iter().zip(args.into_iter()) {
+            executor.environment.define(&param.0, value);
+        }
+        executor.visit_statement(&self.body)?;
+        executor.scope_exit()?;
+        Ok(())
+    }
+
+    fn arity(&self) -> usize { self.params.len() }
 }
 
 /// Result of tree-walking
@@ -30,7 +77,7 @@ pub enum Value {
     UnsignedReal(f64),
     String(String),
     Boolean(bool),
-    Procedure(ProcedureValue),
+    Procedure(Box<dyn Callable>),
     Null,
 }
 
@@ -85,6 +132,10 @@ impl Environment {
         }
     }
 
+    pub fn get_builtin_env() -> Box<Environment> {
+        todo!()
+    }
+
     pub fn define(&mut self, var: &str, val: Value) {
         self.symbols.insert(var.to_owned(), val);
     }
@@ -111,7 +162,7 @@ impl Environment {
 
 #[derive(Debug)]
 pub struct Interpreter {
-    environment: Box<Environment>,
+    pub environment: Box<Environment>,
 }
 
 impl Interpreter {
@@ -121,13 +172,13 @@ impl Interpreter {
         }
     }
 
-    fn scope_enter(&mut self) -> Result<(), InterpreterError> {
+    pub fn scope_enter(&mut self) -> Result<(), InterpreterError> {
         let old = std::mem::replace(&mut self.environment, Box::new(Environment::new()));
         self.environment = Box::new(Environment::with_enclosing(old));
         Ok(())
     }
 
-    fn scope_exit(&mut self) -> Result<(), InterpreterError> {
+    pub fn scope_exit(&mut self) -> Result<(), InterpreterError> {
         self.environment = self.environment.as_mut().take_enclosing().ok_or(
             InterpreterError::NoParentEnvironment
         )?;
@@ -144,9 +195,14 @@ impl Interpreter {
 
     fn visit_procedure_declaration(
         &mut self, 
-        _decl: &ProcedureDeclaration
+        decl: &ProcedureDeclaration
     ) -> Result<(), InterpreterError> {
-        todo!()
+        let func = ProcedureValue {
+            name: decl.name.clone(),
+            params: decl.params.clone(),
+            body: decl.body.clone(),
+        };
+        Ok(())
     }
 
     fn visit_decl_section(&mut self, section: &DeclSection) -> Result<(), InterpreterError> {
@@ -172,7 +228,7 @@ impl Interpreter {
         }
     }
 
-    fn visit_statement(&mut self, stmt: &Box<Stmt>) -> Result<(), InterpreterError> {
+    pub fn visit_statement(&mut self, stmt: &Box<Stmt>) -> Result<(), InterpreterError> {
         match stmt.statement.as_ref() {
             UnlabeledStmt::Assigment { left, right } => {
                 let ident = &left.name;
@@ -182,27 +238,23 @@ impl Interpreter {
             },
             UnlabeledStmt::ProcedureCall { designator } => {
                 let ident = &designator.name;
-                let val = self.environment.get_value(ident).cloned().ok_or(
-                    InterpreterError::UndefinedVariable
-                )?;
-                match val {
-                    Value::Procedure(proc) => {
-                        match designator.items.first() {
-                            Some(&DesignatorItem::Call { ref arguments }) => {
-                                self.scope_enter()?;
-                                for (param, arg) in proc.params.iter().zip(arguments) {
-                                    let value = self.visit_expr(&arg.0)?;
-                                    self.environment.define(param, value);
-                                }
-                                let proc_stmt = &proc.body.body;
-                                self.visit_statement(proc_stmt)?;
-                                self.scope_exit()?;
-                                Ok(())
-                            },
-                            None => Err(InterpreterError::NotImplemented),
-                            _ => Err(InterpreterError::NotCallable),
+                // We need clone cause statements in procedure definition can delete function symbol itself
+                // And also i don't know how i can represent this invariant in type system
+                let proc = Box::new(
+                    get_typed!(self.environment, ident, Procedure, ProcedureValue, ref)?.clone()
+                );
+                match designator.items.first() {
+                    Some(&DesignatorItem::Call { ref arguments }) => {
+                        if arguments.len() != proc.arity() {
+                            return Err(InterpreterError::MismathedArgumentsCount);
                         }
+                        let values: Result<Vec<_>, _> = arguments.iter()
+                            .map(|arg| self.visit_expr(&arg.0))
+                            .collect();
+                        proc.as_mut().call(self, values?)?;
+                        Ok(())
                     },
+                    None => Err(InterpreterError::NotImplemented),
                     _ => Err(InterpreterError::NotCallable),
                 }
             },
@@ -232,7 +284,7 @@ impl Interpreter {
                 self.scope_exit()?;
                 result
             },
-            UnlabeledStmt::Case { condition, case_items, else_branch } => {
+            UnlabeledStmt::Case { condition: _, case_items: _, else_branch: _ } => {
                 Ok(())
             },
             UnlabeledStmt::Repeat { statements, condition } => {

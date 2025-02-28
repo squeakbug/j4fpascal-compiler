@@ -94,8 +94,78 @@ impl Parser {
         Ok(Some(DeclSection::Procedure(declarations)))
     }
 
-    fn procedure_declaration(&mut self) -> Result<Option<ProcedureDeclaration>, ParserError> {
+    fn identifier(&mut self) -> Option<String> {
+        match self.peek() {
+            Some(Token { token_type: TokenType::Identifier(ref name), .. }) => {
+                self.advance();
+                return Some(name.clone());
+            },
+            _ => None,
+        }
+    }
+
+    fn type_decl(&mut self) -> Result<Option<String>, ParserError> {
         Ok(None)
+    }
+
+    fn formal_parameter(&mut self) -> Result<Option<(String, String)>, ParserError> {
+        let parameter = self.identifier().unwrap();
+        let type_decl = self.type_decl()?.unwrap();
+        Ok(Some((parameter, type_decl)))
+    }
+
+    fn formal_parameter_list(&mut self) -> Result<Vec<(String, String)>, ParserError> {
+        let mut parameters = vec![];
+        if let Some(parameter) = self.formal_parameter()? {
+            parameters.push(parameter);
+            while let Some(token) = self.peek() {
+                if token.token_type == TokenType::Semicolon {
+                    self.advance();
+                    if let Some(parameter) = self.formal_parameter()? {
+                        parameters.push(parameter);
+                    } else {
+                        return Err(ParserError::UnexpectedToken(self.current));
+                    }
+                } else {
+                    break;
+                }
+            }
+        }
+        return Ok(parameters);
+    }
+
+    fn procedure_declaration(&mut self) -> Result<Option<ProcedureDeclaration>, ParserError> {
+        if let Some(Token { token_type: TokenType::Procedure, .. }) = self.peek() {
+            self.advance();
+            self.consume(TokenType::Semicolon)?;
+            match self.peek() {
+                Some(Token { token_type: TokenType::Identifier(ref name), .. }) => {
+                    self.advance();
+                    match self.peek() {
+                        Some(Token { token_type: TokenType::LeftParen,.. }) => {
+                            self.advance();
+                            let params = self.formal_parameter_list()?;
+                            self.consume(TokenType::RightParen)?;
+                            let body = Box::new(self.compound_statement()?.unwrap());
+                            Ok(Some(ProcedureDeclaration {
+                                name: name.clone(),
+                                params,
+                                return_type: None,
+                                body: Box::new(Stmt {
+                                    label: None,
+                                    statement: body,
+                                }),
+                            }))
+                        }
+                        _ => Err(ParserError::UnexpectedEOF(self.current)),
+                    }
+                },
+                None => Err(ParserError::UnexpectedEOF(self.current)),
+                _ => Ok(None),
+            }
+        } else {
+            Ok(None)
+        }
     }
 
     fn statement(&mut self) -> Result<Option<Stmt>, ParserError> {

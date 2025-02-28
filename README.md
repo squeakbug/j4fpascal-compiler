@@ -25,6 +25,7 @@ affliction.
 * [Rust compiler in Rust](https://github.com/rust-lang/rust)
 * [gleam compiler in Rust](https://github.com/gleam-lang/gleam)
 * [Free Pascal Compiler](https://gitlab.com/freepascal.org)
+* [QEMU TCG compiler](https://github.com/qemu/qemu/blob/master/tcg/tcg.c)
 
 * [Poline](https://github.com/cronokirby/poline)
 * [C compiler](https://github.com/ClementTsang/rustcc)
