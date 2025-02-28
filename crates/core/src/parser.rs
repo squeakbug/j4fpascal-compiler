@@ -1,7 +1,10 @@
 use thiserror::Error;
 
 use crate::{
-    ast::{Block, CaseItem, CaseLabel, DeclSection, Designator, DesignatorItem, Expr, ProcedureDeclaration, Stmt, UnlabeledStmt, VarDeclaration},
+    ast::{
+        Block, CaseItem, CaseLabel, DeclSection, Designator, 
+        DesignatorItem, Expr, ProcedureDeclaration, Stmt, UnlabeledStmt,
+    },
     lexer::{Token, TokenType},
 };
 

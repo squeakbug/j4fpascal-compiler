@@ -2,7 +2,7 @@ use std::{collections::HashMap, fmt};
 
 use core::{
     ast::{Block, DeclSection, DesignatorItem, Expr, ProcedureDeclaration, Stmt, TypeDeclaration, UnlabeledStmt, VarDeclaration}, 
-    lexer::{self, Lexer, Token, TokenType}, 
+    lexer::{self, Lexer}, 
     parser::Parser
 };
 
@@ -13,6 +13,7 @@ pub enum InterpreterError {
     AssigmentToNotDefinedVariable,
     NoParentEnvironment,
     NotCallable,
+    MismatchedTypes,
 }
 
 #[derive(Debug, Clone)]
@@ -52,6 +53,23 @@ pub struct Environment {
     pub symbols: HashMap<String, Value>,
 }
 
+macro_rules! get_typed {
+    ($self:expr, $var:expr, $variant:ident, $type:ty) => {
+        match $self.symbols.get($var) {
+            Some(&Value::$variant(val)) => Ok(val),
+            Some(_) => Err(InterpreterError::MismatchedTypes),
+            _ => Err(InterpreterError::UndefinedVariable),
+        }
+    };
+    ($self:expr, $var:expr, $variant:ident, $type:ty, $ref:tt) => {
+        match $self.symbols.get($var) {
+            Some(Value::$variant($ref val)) => Ok(val),
+            Some(_) => Err(InterpreterError::MismatchedTypes),
+            _ => Err(InterpreterError::UndefinedVariable),
+        }
+    };
+}
+
 impl Environment {
     pub fn new() -> Self {
         Environment {
@@ -82,8 +100,8 @@ impl Environment {
         }
     }
 
-    pub fn get(&self, var: &str) -> Option<Value> {
-        self.symbols.get(var).cloned()
+    pub fn get_value(&self, var: &str) -> Option<&Value> {
+        self.symbols.get(var)
     }
 
     pub fn take_enclosing(&mut self) -> Option<Box<Environment>> {
@@ -157,20 +175,20 @@ impl Interpreter {
     fn visit_statement(&mut self, stmt: &Box<Stmt>) -> Result<(), InterpreterError> {
         match stmt.statement.as_ref() {
             UnlabeledStmt::Assigment { left, right } => {
-                let ident = left.name;
+                let ident = &left.name;
                 let value = self.visit_expr(right)?;
-                self.environment.assign(&ident, value);
+                self.environment.assign(ident, value)?;
                 Ok(())
             },
             UnlabeledStmt::ProcedureCall { designator } => {
-                let ident = designator.name;
-                let val = self.environment.get(&ident).ok_or(
+                let ident = &designator.name;
+                let val = self.environment.get_value(ident).cloned().ok_or(
                     InterpreterError::UndefinedVariable
                 )?;
                 match val {
                     Value::Procedure(proc) => {
                         match designator.items.first() {
-                            Some(&DesignatorItem::Call { arguments }) => {
+                            Some(&DesignatorItem::Call { ref arguments }) => {
                                 self.scope_enter()?;
                                 for (param, arg) in proc.params.iter().zip(arguments) {
                                     let value = self.visit_expr(&arg.0)?;
@@ -182,6 +200,7 @@ impl Interpreter {
                                 Ok(())
                             },
                             None => Err(InterpreterError::NotImplemented),
+                            _ => Err(InterpreterError::NotCallable),
                         }
                     },
                     _ => Err(InterpreterError::NotCallable),
@@ -222,8 +241,10 @@ impl Interpreter {
                     for stmt in statements {
                         self.visit_statement(stmt)?;
                     }
-                    if self.visit_expr(condition)? == false {
-                        break;
+                    match self.visit_expr(condition)? {
+                        Value::Boolean(false) => break,
+                        Value::Boolean(true) => { },
+                        _ => return Err(InterpreterError::MismatchedTypes),
                     }
                 }
                 self.scope_exit()?;
@@ -231,8 +252,12 @@ impl Interpreter {
             },
             UnlabeledStmt::While { condition, statement } => {
                 self.scope_enter()?;
-                while self.visit_expr(condition)? == true {
-                    self.visit_statement(stmt)?;
+                loop {
+                    match self.visit_expr(condition)? {
+                        Value::Boolean(false) => break,
+                        Value::Boolean(true) => self.visit_statement(statement)?,
+                        _ => return Err(InterpreterError::MismatchedTypes),
+                    }
                 }
                 self.scope_exit()?;
                 Ok(())
@@ -240,19 +265,29 @@ impl Interpreter {
             UnlabeledStmt::For { var, init, to, statement, is_down_to } => {
                 self.scope_enter()?;
                 let init_val = self.visit_expr(init)?;
-                let var_name = var.name;
-                self.environment.assign(&var_name, init_val);
+                let var_name = &var.name;
+                self.environment.define(var_name, init_val);
                 loop {
-                    if self.environment.get(&var_name) < to {
-                        self.visit_statement(stmt)?;
-                    } else {
-                        break;
+                    let i = get_typed!(self.environment, var_name, UnsignedInteger, i64)?;
+                    let to_val = self.visit_expr(to)?;
+                    match to_val {
+                        Value::UnsignedInteger(to_val) => {
+                            if *is_down_to {
+                                if i <= to_val { break; }
+                                self.environment.assign(var_name, Value::UnsignedInteger(i - 1))?;
+                            } else {
+                                if i >= to_val { break; }
+                                self.environment.assign(var_name, Value::UnsignedInteger(i + 1))?;
+                            }
+                            self.visit_statement(statement)?;
+                        },
+                        _ => return Err(InterpreterError::MismatchedTypes),
                     }
                 }
                 self.scope_exit()?;
                 Ok(())
             },
-            UnlabeledStmt::Goto { label } => {
+            UnlabeledStmt::Goto { label: _label } => {
                 Err(InterpreterError::NotImplemented)
             },
             UnlabeledStmt::Break => {
@@ -261,7 +296,6 @@ impl Interpreter {
             UnlabeledStmt::Continue => {
                 Err(InterpreterError::NotImplemented)
             },
-            _ => Err(InterpreterError::NotImplemented),
         }
     }
 
@@ -327,19 +361,17 @@ impl Interpreter {
                     },
                     lexer::TokenType::True => Ok(Value::Boolean(true)),
                     lexer::TokenType::False => Ok(Value::Boolean(false)),
+                    lexer::TokenType::Nil => Ok(Value::Null),
+                    lexer::TokenType::StringLiteral(ref val) => Ok(Value::String(val.clone())),
                     _ => Err(InterpreterError::NotImplemented),
                 }
             },
             Expr::Designator { designator } => {
-                match var {
-                    Token { token_type: TokenType::Identifier(name), .. } => {
-                        let val = self.environment.as_ref().unwrap().get(name.clone()).unwrap();
-                        return Ok(val);
-                    },
-                    _ => return Err(InterpreterError::NotImplemented),
-                }
+                let name = &designator.name;
+                return self.environment.get_value(name).cloned().ok_or(
+                    InterpreterError::UndefinedVariable
+                );
             }
-            _ => Err(InterpreterError::NotImplemented),
         }
     }
 
