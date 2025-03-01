@@ -1,14 +1,17 @@
-use std::{collections::HashMap, fmt};
+use std::{collections::HashMap, fmt::{self, Debug}};
 
 use core::{
     ast::{
         Block, DeclSection, DesignatorItem, Expr, 
-        ProcedureDeclaration, Stmt, TypeDeclaration, 
-        UnlabeledStmt, VarDeclaration
+        ProcedureDeclaration, Stmt, TypeDeclaration,
+        UnlabeledStmt, VarDeclaration, Program,
     },
     lexer::{self, Lexer}, 
-    parser::Parser
+    parser::{Parser, ParserError},
+    sema::SemanticError,
 };
+
+pub type Result<Ok, Err = Error> = std::result::Result<Ok, Err>;
 
 #[derive(Debug)]
 pub enum InterpreterError {
@@ -19,13 +22,15 @@ pub enum InterpreterError {
     NotCallable,
     MismatchedTypes,
     MismathedArgumentsCount,
+    AlreadyDefined,
 }
 
-#[derive(Debug, Clone)]
-pub struct ProcedureValue {
-    pub name: String,
-    pub params: Vec<(String, String)>,
-    pub body: Box<Stmt>,
+#[derive(Debug)]
+pub enum Error {
+    Lexer(lexer::LexerError),
+    Parser(ParserError),
+    Semantic(SemanticError),
+    Interpreter(InterpreterError),
 }
 
 pub trait Callable {
@@ -37,12 +42,18 @@ pub trait Callable {
     fn arity(&self) -> usize;
 }
 
+#[derive(Debug, Clone)]
+pub struct NativeProcedureValue {
+    pub decl: Box<ProcedureDeclaration>,
+}
+
+#[derive(Debug, Clone)]
 pub struct WriteProcedureValue;
 
 impl Callable for WriteProcedureValue {
     fn call(
         &mut self, 
-        executor: &mut Interpreter, 
+        _executor: &mut Interpreter, 
         args: Vec<Value>
     ) -> Result<(), InterpreterError> {
         print!("{:?}", args);
@@ -52,22 +63,67 @@ impl Callable for WriteProcedureValue {
     fn arity(&self) -> usize { 1 }
 }
 
-impl Callable for ProcedureValue {
+#[derive(Debug, Clone)]
+pub struct ReadProcedureValue;
+
+impl Callable for ReadProcedureValue {
+    fn call(
+        &mut self,
+        _executor: &mut Interpreter, 
+        _args: Vec<Value>
+    ) -> Result<(), InterpreterError> {
+        Ok(())
+    }
+
+    fn arity(&self) -> usize { 0 }
+}
+
+impl Callable for NativeProcedureValue {
     fn call(
         &mut self, 
         executor: &mut Interpreter, 
         args: Vec<Value>
     ) -> Result<(), InterpreterError> {
         executor.scope_enter()?;
-        for (param, value) in self.params.iter().zip(args.into_iter()) {
-            executor.environment.define(&param.0, value);
+        let def = &self.decl;
+        for (param, value) in def.params.iter().zip(args.into_iter()) {
+            executor.environment.define(&param.0, value)?;
         }
-        executor.visit_statement(&self.body)?;
+        executor.visit_statement(&def.body)?;
         executor.scope_exit()?;
         Ok(())
     }
 
-    fn arity(&self) -> usize { self.params.len() }
+    fn arity(&self) -> usize { self.decl.params.len() }
+}
+
+#[derive(Debug, Clone)]
+pub enum ProcedureValue {
+    Native(NativeProcedureValue),
+    Write(WriteProcedureValue),
+    Read(ReadProcedureValue),
+}
+
+impl Callable for ProcedureValue {
+    fn arity(&self) -> usize {
+        match self {
+            ProcedureValue::Native(ref value) => value.arity(),
+            ProcedureValue::Write(ref value) => value.arity(),
+            ProcedureValue::Read(ref value) => value.arity(),
+        }
+    }
+
+    fn call(
+        &mut self,
+        executor: &mut Interpreter, 
+        args: Vec<Value>
+    ) -> Result<(), InterpreterError> { 
+        match self {
+            ProcedureValue::Native(ref mut value) => value.call(executor, args),
+            ProcedureValue::Write(ref mut value) => value.call(executor, args),
+            ProcedureValue::Read(ref mut value) => value.call(executor, args),
+        }
+    }
 }
 
 /// Result of tree-walking
@@ -77,7 +133,7 @@ pub enum Value {
     UnsignedReal(f64),
     String(String),
     Boolean(bool),
-    Procedure(Box<dyn Callable>),
+    Procedure(ProcedureValue),
     Null,
 }
 
@@ -102,14 +158,14 @@ pub struct Environment {
 
 macro_rules! get_typed {
     ($self:expr, $var:expr, $variant:ident, $type:ty) => {
-        match $self.symbols.get($var) {
+        match $self.get_value($var) {
             Some(&Value::$variant(val)) => Ok(val),
             Some(_) => Err(InterpreterError::MismatchedTypes),
             _ => Err(InterpreterError::UndefinedVariable),
         }
     };
     ($self:expr, $var:expr, $variant:ident, $type:ty, $ref:tt) => {
-        match $self.symbols.get($var) {
+        match $self.get_value($var) {
             Some(Value::$variant($ref val)) => Ok(val),
             Some(_) => Err(InterpreterError::MismatchedTypes),
             _ => Err(InterpreterError::UndefinedVariable),
@@ -118,10 +174,19 @@ macro_rules! get_typed {
 }
 
 impl Environment {
+    fn get_builtin_symbols() -> HashMap<String, Value> {
+        let write_sym = Value::Procedure(ProcedureValue::Write(WriteProcedureValue));
+        let read_sym = Value::Procedure(ProcedureValue::Read(ReadProcedureValue));
+        let mut symbols = HashMap::new();
+        symbols.insert("write".to_owned(), write_sym);
+        symbols.insert("readln".to_owned(), read_sym);
+        symbols
+    }
+    
     pub fn new() -> Self {
         Environment {
             enclosing: None,
-            symbols: HashMap::new(),
+            symbols: Self::get_builtin_symbols(),
         }
     }
 
@@ -132,12 +197,13 @@ impl Environment {
         }
     }
 
-    pub fn get_builtin_env() -> Box<Environment> {
-        todo!()
-    }
-
-    pub fn define(&mut self, var: &str, val: Value) {
-        self.symbols.insert(var.to_owned(), val);
+    pub fn define(&mut self, var: &str, val: Value) -> Result<(), InterpreterError> {
+        if let Some(_) = self.get_value(var) {
+            return Err(InterpreterError::AlreadyDefined)
+        } else {
+            self.symbols.insert(var.to_owned(), val);
+            Ok(())
+        }
     }
 
     pub fn assign(&mut self, var: &str, val: Value) -> Result<(), InterpreterError> {
@@ -152,7 +218,13 @@ impl Environment {
     }
 
     pub fn get_value(&self, var: &str) -> Option<&Value> {
-        self.symbols.get(var)
+        if let Some(sym) = self.symbols.get(var) {
+            Some(sym)
+        } else if let Some(ref enclosing) = self.enclosing {
+            enclosing.get_value(var)
+        } else {
+            None
+        }
     }
 
     pub fn take_enclosing(&mut self) -> Option<Box<Environment>> {
@@ -195,34 +267,26 @@ impl Interpreter {
 
     fn visit_procedure_declaration(
         &mut self, 
-        decl: &ProcedureDeclaration
+        decl: &Box<ProcedureDeclaration>
     ) -> Result<(), InterpreterError> {
-        let func = ProcedureValue {
-            name: decl.name.clone(),
-            params: decl.params.clone(),
-            body: decl.body.clone(),
-        };
-        Ok(())
+        let proc = ProcedureValue::Native(NativeProcedureValue {
+            decl: decl.clone(),
+        });
+        self.environment.define(&decl.name, Value::Procedure(proc))
     }
 
     fn visit_decl_section(&mut self, section: &DeclSection) -> Result<(), InterpreterError> {
         match section {
-            DeclSection::Type(type_declarations) => {
-                for decl in type_declarations {
-                    self.visit_type_declaration(decl)?;
-                }
+            DeclSection::Type(type_decl) => {
+                self.visit_type_declaration(type_decl)?;
                 Ok(())
             },
-            DeclSection::Variable(var_declarations) => {
-                for decl in var_declarations {
-                    self.visit_var_declaration(decl)?;
-                }
+            DeclSection::Variable(var_decl) => {
+                self.visit_var_declaration(var_decl)?;
                 Ok(())
             },
-            DeclSection::Procedure(procedure_declarations) => {
-                for decl in procedure_declarations {
-                    self.visit_procedure_declaration(decl)?;
-                }
+            DeclSection::Procedure(proc_decl) => {
+                self.visit_procedure_declaration(proc_decl)?;
                 Ok(())
             },
         }
@@ -240,7 +304,7 @@ impl Interpreter {
                 let ident = &designator.name;
                 // We need clone cause statements in procedure definition can delete function symbol itself
                 // And also i don't know how i can represent this invariant in type system
-                let proc = Box::new(
+                let mut proc = Box::new(
                     get_typed!(self.environment, ident, Procedure, ProcedureValue, ref)?.clone()
                 );
                 match designator.items.first() {
@@ -251,7 +315,7 @@ impl Interpreter {
                         let values: Result<Vec<_>, _> = arguments.iter()
                             .map(|arg| self.visit_expr(&arg.0))
                             .collect();
-                        proc.as_mut().call(self, values?)?;
+                        proc.call(self, values?)?;
                         Ok(())
                     },
                     None => Err(InterpreterError::NotImplemented),
@@ -318,7 +382,7 @@ impl Interpreter {
                 self.scope_enter()?;
                 let init_val = self.visit_expr(init)?;
                 let var_name = &var.name;
-                self.environment.define(var_name, init_val);
+                self.environment.define(var_name, init_val)?;
                 loop {
                     let i = get_typed!(self.environment, var_name, UnsignedInteger, i64)?;
                     let to_val = self.visit_expr(to)?;
@@ -434,18 +498,18 @@ impl Interpreter {
         self.visit_statement(&block.body)
     }
 
-    pub fn eval(&mut self, exp: &str) -> Result<(), InterpreterError> {
+    fn visit_program(&mut self, program: &Box<Program>) -> Result<(), InterpreterError> {
+        self.visit_block(&program.block)
+    }
+
+    pub fn eval(&mut self, exp: &str) -> Result<()> {
         let mut lexer = Lexer::new();
         let mut parser = Parser::new();
 
-        let tokens = lexer.lex(exp).map_err(|_err| {
-            InterpreterError::NotImplemented
-        })?;
+        let tokens = lexer.lex(exp).map_err(|err| Error::Lexer(err))?;
         dbg!(&tokens);
-        let ast = parser.parse(tokens).map_err(|_err| {
-            InterpreterError::NotImplemented
-        })?.unwrap();
+        let ast = parser.parse(tokens).map_err(|err|Error::Parser(err))?;
         dbg!(&ast);
-        self.visit_block(&Box::new(ast))
+        self.visit_program(&Box::new(ast)).map_err(|err| Error::Interpreter(err))
     }
 }

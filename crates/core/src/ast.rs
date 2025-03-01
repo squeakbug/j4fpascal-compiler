@@ -150,13 +150,19 @@ pub struct ProcedureDeclaration {
 
 #[derive(Debug, Clone)]
 pub enum DeclSection {
-    Type (Vec<TypeDeclaration>),
-    Variable (Vec<VarDeclaration>),
-    Procedure (Vec<ProcedureDeclaration>),
+    Type (Box<TypeDeclaration>),
+    Variable (Box<VarDeclaration>),
+    Procedure (Box<ProcedureDeclaration>),
 }
 
 #[derive(Debug, Clone)]
 pub struct Block {
     pub decl_sections: Vec<DeclSection>,
     pub body: Box<Stmt>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Program {
+    pub head: String,
+    pub block: Box<Block>,
 }

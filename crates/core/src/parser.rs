@@ -1,53 +1,72 @@
-use thiserror::Error;
-
 use crate::{
     ast::{
         Block, CaseItem, CaseLabel, DeclSection, Designator, 
         DesignatorItem, Expr, ProcedureDeclaration, Stmt, UnlabeledStmt,
+        Program, 
     },
-    lexer::{Token, TokenType},
+    lexer::{SrcSpan, Token, TokenType},
 };
 
-pub struct Parser {
-    istream: Option<Vec<Token>>,
-    current: usize,
+#[derive(Debug, Clone)]
+pub struct ParserError {
+    pub location: SrcSpan,
+    pub kind: ParserErrorType,
 }
 
-#[derive(Error, Debug)]
-pub enum ParserError {
-    #[error("Unexpected token at position {0}")]
-    UnexpectedToken(usize),
-
-    #[error("Unexpected EOF at position {0}")]
-    UnexpectedEOF(usize),
+fn parser_error(kind: ParserErrorType, location: SrcSpan) -> ParserError {
+    ParserError { kind, location }
 }
 
-impl Parser {
-    pub fn new() -> Self {
+#[derive(Debug, Clone)]
+pub enum ParserErrorType {
+    ExpectedProgram,
+}
+
+pub struct Parser<T: Iterator<Item = Token>> {
+    istream: T,
+    tok0: Option<Token>,
+    tok1: Option<Token>,
+    errors: Vec<ParserError>,
+}
+
+impl<T> Parser<T>
+where
+    T: Iterator<Item = Token>
+{
+    pub fn new(input: T) -> Self {
         Parser {
-            istream: None,
-            current: 0,
+            istream: input,
+            tok0: None,
+            tok1: None,
+            errors: vec![],
         }
     }
 
-    pub fn parse(&mut self, tokens: Vec<Token>) -> Result<Option<Block>, ParserError> {
-        self.istream = Some(tokens);
-        self.block()
+    pub fn parse(&mut self) -> Result<Program, ParserError> {
+        self.program()?.ok_or(
+            parser_error(ParserErrorType::ExpectedProgram, SrcSpan { start: 0, end: 0 })
+        )
     }
 
     fn peek(&mut self) -> Option<Token> {
-        self.istream.as_mut().unwrap().get(self.current).cloned()
+        self.tok0.as_mut().cloned()
     }
 
     fn advance(&mut self) -> Option<Token> {
-        let result = self.istream.as_mut().unwrap().get(self.current).cloned();
-        self.current += 1;
-        result
+        let t = self.tok0.take();
+        let mut previous_newline = None;
+        let mut nxt = match self.istream.next() {
+            Some(tok) => Some(tok),
+            None => None,
+        };
+        self.tok0 = self.tok1.take();
+        self.tok1 = nxt.take();
+        t
     }
 
     fn consume(&mut self, expected: TokenType) -> Result<Token, ParserError> {
         match self.advance() {
-            Some(ref token@Token { ref token_type, .. }) if *token_type == expected => {
+            Some(ref token@Token { ref kind, .. }) if *kind == expected => {
                 Ok(token.clone())
             },
             None => Err(ParserError::UnexpectedToken(self.current)),
@@ -74,11 +93,25 @@ impl Parser {
         }
     }
 
+    fn program_head(&mut self) -> Result<String, ParserError> {
+        self.consume(TokenType::Program)?;
+        let name = self.identifier().ok_or(ParserError::UnexpectedToken(self.current))?;
+        self.consume(TokenType::Semicolon)?;
+        Ok(name)
+    }
+
+    fn program(&mut self) -> Result<Option<Program>, ParserError> {
+        let head = self.program_head()?;
+        let block = Box::new(self.block()?.unwrap());
+        self.consume(TokenType::Dot)?;
+        Ok(Some(Program { 
+            head,
+            block,
+        }))
+    }
+
     fn block(&mut self) -> Result<Option<Block>, ParserError> {
-        let mut decl_sections = vec![];
-        while let Some(declaration) = self.decl_section()? {
-            decl_sections.push(declaration);
-        }
+        let decl_sections = self.decl_sections()?;
         let body = Box::new(self.compound_statement()?.unwrap().into());
         Ok(Some(Block {
             decl_sections,
@@ -86,12 +119,20 @@ impl Parser {
         }))
     }
 
-    fn decl_section(&mut self) -> Result<Option<DeclSection>, ParserError> {
+    fn decl_sections(&mut self) -> Result<Vec<DeclSection>, ParserError> {
         let mut declarations = vec![];
-        while let Some(declaration) = self.procedure_declaration()? {
-            declarations.push(declaration);
+        loop {
+            if let Some(declaration) = self.type_decl_section()? {
+                declarations.push(DeclSection::Type(Box::new(declaration)));
+            } else if let Some(declaration) = self.proc_decl_section()? {
+                declarations.push(DeclSection::Procedure(Box::new(declaration)));
+            } else if let Some(declaration) = self.var_decl_section()? {
+                declarations.push(DeclSection::Variable(Box::new(declaration)));
+            } else {
+                break;
+            }
         }
-        Ok(Some(DeclSection::Procedure(declarations)))
+        Ok(declarations)
     }
 
     fn identifier(&mut self) -> Option<String> {
@@ -102,6 +143,14 @@ impl Parser {
             },
             _ => None,
         }
+    }
+
+    fn var_decl_section(&mut self) -> Result<Option<VarDeclaration>, ParserError> {
+        Ok(None)
+    }
+
+    fn type_decl_section(&mut self) -> Result<Option<TypeDeclaration>, ParserError> {
+        Ok(None)
     }
 
     fn type_decl(&mut self) -> Result<Option<String>, ParserError> {
@@ -134,7 +183,7 @@ impl Parser {
         return Ok(parameters);
     }
 
-    fn procedure_declaration(&mut self) -> Result<Option<ProcedureDeclaration>, ParserError> {
+    fn proc_decl_section(&mut self) -> Result<Option<ProcedureDeclaration>, ParserError> {
         if let Some(Token { token_type: TokenType::Procedure, .. }) = self.peek() {
             self.advance();
             self.consume(TokenType::Semicolon)?;

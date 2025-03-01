@@ -1,11 +1,12 @@
 mod riscv;
+mod ir;
 
 use std::{
     env,
-    io::{self, Read, Write},
+    io::{self, Read},
     fs::File,
 };
-
+ 
 use riscv::codegen::CodeEmmiter;
 
 pub fn read_file(filepath: &str) -> io::Result<String> {
