@@ -1,4 +1,5 @@
 mod interpreter;
+mod callable;
 
 use std::{fs::File, io::{self, Read, Write}};
 

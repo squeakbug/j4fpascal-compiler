@@ -50,14 +50,6 @@ pub enum TokenType {
     DotDot,
     Pointer2, // '^'
 
-    // Builtin types
-    Boolean,
-    Char,
-    Integer,
-    Real,
-    Set,
-    String,
-
     // Identifier
     Identifier(String),
 
@@ -66,24 +58,29 @@ pub enum TokenType {
     Begin,
     Break,
     Case,
+    Class,
     Const,
     Continue,
     Do,
     Else,
     End,
+    File,
     For,
     Function,
     Goto,
     If,
     In,
+    Interface,
     Is,
     Label,
+    Object,
     Of,
     Packed,
     Procedure,
     Program,
     Record,
     Repeat,
+    Set,
     Then,
     To,
     Type,
@@ -93,9 +90,8 @@ pub enum TokenType {
     With,
 
     // Comments
-    CommentNormal,
+    Comment,
     CommentDoc { content: String },
-    CommentModule,
 }
 
 #[derive(Debug, Clone)]
@@ -158,36 +154,35 @@ pub fn str_to_keyword(word: &str) -> Option<TokenType> {
         "and" => Some(TokenType::And),
         "array" => Some(TokenType::Array),
         "begin" => Some(TokenType::Begin),
-        "boolean" => Some(TokenType::Boolean),
         "case" => Some(TokenType::Case),
-        "char" => Some(TokenType::Char),
+        "class" => Some(TokenType::Class),
         "const" => Some(TokenType::Const),
         "div" => Some(TokenType::Div),
         "do" => Some(TokenType::Do),
         "else" => Some(TokenType::Else),
         "end" => Some(TokenType::End),
         "false" => Some(TokenType::False),
+        "file" => Some(TokenType::File),
         "for" => Some(TokenType::For),
         "function" => Some(TokenType::Function),
         "goto" => Some(TokenType::Goto),
         "if" => Some(TokenType::If),
         "in" => Some(TokenType::In),
         "is" => Some(TokenType::Is),
-        "integer" => Some(TokenType::Integer),
+        "interface" => Some(TokenType::Interface),
         "label" => Some(TokenType::Label),
         "mod" => Some(TokenType::Mod),
         "nil" => Some(TokenType::Nil),
         "not" => Some(TokenType::Not),
+        "object" => Some(TokenType::Object),
         "of" => Some(TokenType::Of),
         "or" => Some(TokenType::Or),
         "packed" => Some(TokenType::Packed),
         "procedure" => Some(TokenType::Procedure),
         "program" => Some(TokenType::Program),
-        "real" => Some(TokenType::Real),
         "record" => Some(TokenType::Record),
         "repeat" => Some(TokenType::Repeat),
         "set" => Some(TokenType::Set),
-        "string" => Some(TokenType::String),
         "then" => Some(TokenType::Then),
         "to" => Some(TokenType::To),
         "true" => Some(TokenType::True),
@@ -225,6 +220,10 @@ where
 
     fn peek(&mut self) -> Option<char> {
         self.chr0
+    }
+
+    fn peek_next(&mut self) -> Option<char> {
+        self.chr1
     }
 
     fn next_char(&mut self) -> Option<char> {
@@ -490,44 +489,57 @@ where
     }
 
     // There are 3 kinds of comments
-    // 2 slash, normal
-    // 3 slash, document
-    // 4 slash, module
+    // '//', normal
+    // '(* ... *)', multiline
+    // '(** ... **)', document
     // this function is entered after 2 slashes
-    fn lex_comment(&mut self) -> Token {
+    fn lex_multiline_comment(&mut self) -> Token {
         enum Kind {
             Comment,
             Doc,
-            ModuleDoc,
         }
         let kind = match (self.chr0, self.chr1) {
-            (Some('/'), Some('/')) => {
+            (Some('*'), Some('*')) => {
                 let _ = self.next_char();
-                let _ = self.next_char();
-                Kind::ModuleDoc
-            }
-            (Some('/'), _) => {
                 let _ = self.next_char();
                 Kind::Doc
             }
-            _ => Kind::Comment,
+            _ => {
+                let _ = self.next_char();
+                Kind::Comment
+            }
         };
         let mut content = String::new();
+
         let start_pos = self.get_pos();
-        while Some('\n') != self.chr0 {
+        while (Some('*'), Some(')')) != (self.chr0, self.chr1) {
             match self.chr0 {
                 Some(c) => content.push(c),
                 None => break,
             }
             let _ = self.next_char();
         }
+        self.next_char();
+        self.next_char();
         let end_pos = self.get_pos();
+
         let kind = match kind {
-            Kind::Comment => TokenType::CommentNormal,
+            Kind::Comment => TokenType::Comment,
             Kind::Doc => TokenType::CommentDoc { content },
-            Kind::ModuleDoc => TokenType::CommentModule,
         };
         Token { start_pos, kind, end_pos }
+    }
+
+    fn lex_oneline_comment(&mut self) -> Token {
+        let start_pos = self.get_pos();
+        while Some('\n') != self.chr0 {
+            match self.chr0 {
+                Some(_) => { let _ = self.next_char(); },
+                None => break,
+            }
+        }
+        let end_pos = self.get_pos();
+        Token { start_pos, kind: TokenType::Comment, end_pos }
     }
 
     fn consume_character(&mut self, ch: char) -> Result<()> {
@@ -535,49 +547,68 @@ where
             '+' => self.add_tok1(TokenType::Plus),
             '-' => self.add_tok1(TokenType::Minus),
             '*' => self.add_tok1(TokenType::Star),
-            '(' => self.add_tok1(TokenType::LeftParen),
             ')' => self.add_tok1(TokenType::RightParen),
             '[' => self.add_tok1(TokenType::LeftBrack),
             ']' => self.add_tok1(TokenType::RightBrack),
             '=' => self.add_tok1(TokenType::Equal),
             ',' => self.add_tok1(TokenType::Comma),
+            '(' => {
+                match self.peek_next() {
+                    Some('*') => {
+                        self.next_char();
+                        let comment = self.lex_multiline_comment();
+                        self.ostream.push(comment);
+                    },
+                    _ => self.add_tok1(TokenType::LeftParen),
+                }
+            }
             '/' => {
-                self.next_char();
-                match self.peek() {
+                match self.peek_next() {
                     Some('/') => {
                         self.next_char();
-                        let comment = self.lex_comment();
+                        let comment = self.lex_oneline_comment();
                         self.ostream.push(comment);
                     },
                     _ => self.add_tok1(TokenType::Slash),
                 }
             },
             '<' => {
-                self.next_char();
-                match self.peek() {
-                    Some('=') => self.add_tokn(TokenType::LessEqual, 2),
-                    Some('>') => self.add_tokn(TokenType::NotEqual, 2),
+                match self.peek_next() {
+                    Some('=') => {
+                        self.next_char();
+                        self.add_tokn(TokenType::LessEqual, 2)
+                    },
+                    Some('>') => {
+                        self.next_char();
+                        self.add_tokn(TokenType::NotEqual, 2)
+                    },
                     _ => self.add_tok1(TokenType::Less),
                 }
             },
             '>' => {
-                self.next_char();
-                match self.peek() {
-                    Some('=') => self.add_tokn(TokenType::GreaterEqual, 2),
+                match self.peek_next() {
+                    Some('=') => {
+                        self.next_char();
+                        self.add_tokn(TokenType::GreaterEqual, 2)
+                    },
                     _ => self.add_tok1(TokenType::Greater),
                 }
             },
             ':' => {
-                self.next_char();
-                match self.peek() {
-                    Some('=') => self.add_tokn(TokenType::Assignment, 2),
+                match self.peek_next() {
+                    Some('=') => {
+                        self.next_char();
+                        self.add_tokn(TokenType::Assignment, 2)
+                    },
                     _ => self.add_tok1(TokenType::Colon),
                 }
             },
             '.' => {
-                self.next_char();
-                match self.peek() {
-                    Some('.') => self.add_tokn(TokenType::DotDot, 2),
+                match self.peek_next() {
+                    Some('.') => {
+                        self.next_char();
+                        self.add_tokn(TokenType::DotDot, 2)
+                    },
                     _ => self.add_tok1(TokenType::Dot),
                 }
             },

@@ -1,15 +1,15 @@
-use std::{collections::HashMap, fmt::{self, Debug}};
+use std::{collections::HashMap, fmt::{self, Debug}, fs};
 
 use core::{
     ast::{
-        Block, DeclSection, DesignatorItem, Expr, 
-        ProcedureDeclaration, Stmt, TypeDeclaration,
-        UnlabeledStmt, VarDeclaration, Program,
+        Block, DeclSection, DesignatorItem, Expr, ProcedureDeclaration, Program, Stmt, TypeDeclaration, UnlabeledStmt, VarDeclaration
     },
     lexer::{self, Lexer}, 
     parser::{Parser, ParserError},
     sema::SemanticError,
 };
+
+use crate::callable::{Callable, NativeProcedureValue, ProcedureValue, ReadProcedureValue, ReadlnProcedureValue, WriteProcedureValue, WritelnProcedureValue};
 
 pub type Result<Ok, Err = Error> = std::result::Result<Ok, Err>;
 
@@ -33,104 +33,6 @@ pub enum Error {
     Interpreter(InterpreterError),
 }
 
-pub trait Callable {
-    fn call(
-        &mut self,
-        executor: &mut Interpreter, 
-        args: Vec<Value>
-    ) -> Result<(), InterpreterError>;
-    fn arity(&self) -> usize;
-}
-
-#[derive(Debug, Clone)]
-pub struct NativeProcedureValue {
-    pub decl: Box<ProcedureDeclaration>,
-}
-
-#[derive(Debug, Clone)]
-pub struct WriteProcedureValue;
-
-impl Callable for WriteProcedureValue {
-    fn call(
-        &mut self, 
-        _executor: &mut Interpreter, 
-        args: Vec<Value>
-    ) -> Result<(), InterpreterError> {
-        for arg in args {
-            match arg {
-                Value::String(s) => print!("{}", s),
-                v => print!("{}", v),
-            }
-        }
-        Ok(())
-    }
-
-    fn arity(&self) -> usize { 1 }
-}
-
-#[derive(Debug, Clone)]
-pub struct ReadProcedureValue;
-
-impl Callable for ReadProcedureValue {
-    fn call(
-        &mut self,
-        _executor: &mut Interpreter, 
-        _args: Vec<Value>
-    ) -> Result<(), InterpreterError> {
-        Ok(())
-    }
-
-    fn arity(&self) -> usize { 0 }
-}
-
-impl Callable for NativeProcedureValue {
-    fn call(
-        &mut self, 
-        executor: &mut Interpreter, 
-        args: Vec<Value>
-    ) -> Result<(), InterpreterError> {
-        executor.scope_enter()?;
-        let def = &self.decl;
-        let head = &def.head;
-        for (param, value) in head.params.iter().zip(args.into_iter()) {
-            executor.environment.define(&param.0, value)?;
-        }
-        executor.visit_statement(&def.body)?;
-        executor.scope_exit()?;
-        Ok(())
-    }
-
-    fn arity(&self) -> usize { self.decl.head.params.len() }
-}
-
-#[derive(Debug, Clone)]
-pub enum ProcedureValue {
-    Native(NativeProcedureValue),
-    Write(WriteProcedureValue),
-    Read(ReadProcedureValue),
-}
-
-impl Callable for ProcedureValue {
-    fn arity(&self) -> usize {
-        match self {
-            ProcedureValue::Native(ref value) => value.arity(),
-            ProcedureValue::Write(ref value) => value.arity(),
-            ProcedureValue::Read(ref value) => value.arity(),
-        }
-    }
-
-    fn call(
-        &mut self,
-        executor: &mut Interpreter, 
-        args: Vec<Value>
-    ) -> Result<(), InterpreterError> { 
-        match self {
-            ProcedureValue::Native(ref mut value) => value.call(executor, args),
-            ProcedureValue::Write(ref mut value) => value.call(executor, args),
-            ProcedureValue::Read(ref mut value) => value.call(executor, args),
-        }
-    }
-}
 
 /// Result of tree-walking
 #[derive(Debug, Clone)]
@@ -182,10 +84,14 @@ macro_rules! get_typed {
 impl Environment {
     fn get_builtin_symbols() -> HashMap<String, Value> {
         let write_sym = Value::Procedure(ProcedureValue::Write(WriteProcedureValue));
+        let writeln_sym = Value::Procedure(ProcedureValue::Writeln(WritelnProcedureValue));
         let read_sym = Value::Procedure(ProcedureValue::Read(ReadProcedureValue));
+        let readln_sym = Value::Procedure(ProcedureValue::Readln(ReadlnProcedureValue));
         let mut symbols = HashMap::new();
         symbols.insert("write".to_owned(), write_sym);
-        symbols.insert("readln".to_owned(), read_sym);
+        symbols.insert("writeln".to_owned(), writeln_sym);
+        symbols.insert("read".to_owned(), read_sym);
+        symbols.insert("readln".to_owned(), readln_sym);
         symbols
     }
     
@@ -267,8 +173,15 @@ impl Interpreter {
         todo!()
     }
 
-    fn visit_var_declaration(&mut self, _decl: &VarDeclaration) -> Result<(), InterpreterError> {
-        todo!()
+    fn visit_var_declaration(&mut self, decl: &VarDeclaration) -> Result<(), InterpreterError> {
+        let init_value = if let Some(val) = &decl.init_value {
+            self.visit_expr(val)?
+        } else {
+            match &decl.var_type {
+                _ => Value::UnsignedInteger(0),
+            }
+        };
+        self.environment.define(&decl.name, init_value)
     }
 
     fn visit_procedure_declaration(
@@ -288,7 +201,9 @@ impl Interpreter {
                 Ok(())
             },
             DeclSection::Variable(var_decl) => {
-                self.visit_var_declaration(var_decl)?;
+                for decl in var_decl.iter() {
+                    self.visit_var_declaration(decl)?;
+                }
                 Ok(())
             },
             DeclSection::Procedure(proc_decl) => {
@@ -518,11 +433,11 @@ impl Interpreter {
         let mb_tokens = Lexer::new(exp.chars()).collect::<Vec<_>>();
         let tokens = mb_tokens.into_iter().collect::<Result<Vec<_>, _>>()
             .map_err(|err| Error::Lexer(err))?;
-        //dbg!(&tokens);
+        fs::write("tokens.txt", format!("{:#?}", &tokens)).unwrap();
 
         let mut parser = Parser::new(tokens.into_iter());
         let ast = parser.parse().map_err(|err|Error::Parser(err))?;
-        //dbg!(&ast);
+        fs::write("ast.txt", format!("{:#?}", &ast)).unwrap();
 
         self.visit_program(&Box::new(ast)).map_err(|err| Error::Interpreter(err))
     }

@@ -3,7 +3,7 @@ program ifprog(input, output);
 (*** Demonstrate the if.  ***)
  
 var
-   number: integer;
+  number: integer;
  
 (* **************************    main      ********************************** *)
  

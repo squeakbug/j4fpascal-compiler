@@ -1,6 +1,3 @@
-use core::error;
-use std::default;
-
 use crate::{
     ast::{
         Block, CaseItem, CaseLabel, DeclSection, Designator, DesignatorItem, Expr, ProcedureDeclaration, ProcedureHeadDeclaration, Program, Stmt, TypeDeclaration, UnlabeledStmt, VarDeclaration
@@ -40,6 +37,7 @@ pub enum ParserErrorType {
     ExpectedActualParameter,
     ExpectedUnlabeledStmt,
     ExpectedBlock,
+    ExpectedTypeDeclaration,
 }
 
 pub struct Parser<T: Iterator<Item = Token>> {
@@ -77,10 +75,25 @@ where
 
     fn advance(&mut self) -> Option<Token> {
         let t = self.tok0.take();
-        let mut nxt = match self.istream.next() {
-            Some(tok) => Some(tok),
-            None => None,
-        };
+        let mut nxt;
+        loop {
+            match self.istream.next() {
+                Some(Token { kind: TokenType::Comment, .. }) => {
+                    continue;
+                },
+                Some(Token { kind: TokenType::CommentDoc { .. }, .. }) => {
+                    continue;
+                },
+                Some(tok) => {
+                    nxt = Some(tok);
+                    break;
+                }
+                None => {
+                    nxt = None;
+                    break;
+                },
+            };
+        }
         self.tok0 = self.tok1.take();
         self.tok1 = nxt.take();
         t
@@ -125,36 +138,52 @@ where
         }
     }
 
-    fn program_head(&mut self) -> Result<Option<String>, ParserError> {
+    fn program_parm_seq(&mut self) -> Result<Vec<String>, ParserError> {
+        let mut idents = vec![];
+        if let Some(lp_tok@Token{ kind: TokenType::LeftParen, .. }) = self.peek() {
+            self.advance();
+            while let Some(identifier) = self.identifier() {
+                idents.push(identifier);
+                match self.peek() {
+                    Some(Token { kind: TokenType::Comma, .. }) => {
+                        self.advance();
+                    },
+                    _ => break,
+                }
+            }
+            self.consume(TokenType::RightParen, lp_tok.as_ref().into())?;
+        }
+        Ok(idents)
+    }
+
+    fn program_head(&mut self) -> Result<Option<(String, Vec<String>)>, ParserError> {
         if let Some(program_tok@Token { kind: TokenType::Program, .. }) = self.peek() {
             self.advance();
-            let name = self.identifier().ok_or(error_tok(
+            let namespace_name = self.identifier().ok_or(error_tok(
                 ParserErrorType::ExpectedIdentifier, 
                 &program_tok
             ))?;
+            let params = self.program_parm_seq()?;
             self.consume(TokenType::Semicolon, program_tok.as_ref().into())?;
-            Ok(Some(name))
+            Ok(Some((namespace_name, params)))
         } else {
             Ok(None)
         }
     }
 
     fn program(&mut self) -> Result<Option<Program>, ParserError> {
-        if let Some(head) = self.program_head()? {
-            if let Some(block) = self.block()? {
-                self.consume(TokenType::Dot, SrcSpan { start: 0, end: 0 })?;
-                Ok(Some(Program { 
-                    head,
-                    block: Box::new(block),
-                }))
-            } else {
-                Err(parser_error(
-                    ParserErrorType::ExpectedBlock, 
-                    SrcSpan { start: 0, end: 0 }
-                ))
-            }
+        let head = self.program_head()?;
+        if let Some(block) = self.block()? {
+            self.consume(TokenType::Dot, SrcSpan { start: 0, end: 0 })?;
+            Ok(Some(Program { 
+                head,
+                block: Box::new(block),
+            }))
         } else {
-            Ok(None)
+            Err(parser_error(
+                ParserErrorType::ExpectedBlock, 
+                SrcSpan { start: 0, end: 0 }
+            ))
         }
     }
 
@@ -199,16 +228,146 @@ where
         }
     }
 
-    fn var_decl_section(&mut self) -> Result<Option<VarDeclaration>, ParserError> {
-        Ok(None)
+    fn var_decl_section(&mut self) -> Result<Option<Vec<VarDeclaration>>, ParserError> {
+        if let Some(token@Token { kind: TokenType::Var, .. }) = self.peek() {
+            self.advance();
+            if let Some(identifier) = self.identifier() {
+                let mut idents = vec![identifier];
+                while let Some(identifier) = self.identifier() {
+                    idents.push(identifier);
+                    match self.peek() {
+                        Some(Token { kind: TokenType::Comma, .. }) => {
+                            self.advance();
+                        },
+                        _ => break,
+                    }
+                }
+                self.consume(TokenType::Colon, token.as_ref().into())?;
+                if let Some(type_decl) = self.type_decl()? {
+                    let mut result = vec![];
+                    for ident in idents.into_iter() {
+                        result.push(VarDeclaration {
+                            name: ident.to_string(),
+                            // TODO: all vars must reference to the same type and expr
+                            var_type: type_decl.clone(),
+                            init_value: None,
+                        });
+                    }
+                    if let Some(Token { kind: TokenType::Equal, .. }) = self.peek() {
+                        self.advance();
+                        if let Some(expr) = self.expression()? {
+                            for var in result.iter_mut() {
+                                var.init_value = Some(Box::new(expr.clone()));
+                            }
+                            self.consume(TokenType::Semicolon, token.as_ref().into())?;
+                            Ok(Some(result))
+                        } else {
+                            Err(parser_error(
+                                ParserErrorType::ExpectedExpression,
+                                token.as_ref().into()
+                            ))
+                        }
+                    } else {
+                        self.consume(TokenType::Semicolon, token.as_ref().into())?;
+                        Ok(Some(result))
+                    }
+                } else {
+                    Err(parser_error(
+                        ParserErrorType::ExpectedTypeDeclaration,
+                        token.as_ref().into()
+                    ))
+                }
+            } else {
+                Err(parser_error(
+                    ParserErrorType::ExpectedIdentifier,
+                    token.as_ref().into()
+                ))
+            }
+        } else {
+            Ok(None)
+        }
     }
 
     fn type_decl_section(&mut self) -> Result<Option<TypeDeclaration>, ParserError> {
         Ok(None)
     }
 
+    fn array_type_decl(&mut self) -> Result<Option<String>, ParserError> {
+        match self.peek() {
+            Some(Token { kind: TokenType::Array,.. }) => {
+                self.advance();
+                Ok(None)
+            },
+            _ => Ok(None),
+        }
+    }
+
+    fn set_type_decl(&mut self) -> Result<Option<String>, ParserError> {
+        match self.peek() {
+            Some(Token { kind: TokenType::Set,.. }) => {
+                self.advance();
+                Ok(None)
+            },
+            _ => Ok(None),
+        }
+    }
+
+    fn file_type_decl(&mut self) -> Result<Option<String>, ParserError> {
+        match self.peek() {
+            Some(Token { kind: TokenType::File,.. }) => {
+                self.advance();
+                Ok(None)
+            },
+            _ => Ok(None),
+        }
+    }
+
+    fn class_type_decl(&mut self) -> Result<Option<String>, ParserError> {
+        match self.peek() {
+            Some(Token { kind: TokenType::Record,.. }) => {
+                self.advance();
+                Ok(None)
+            },
+            Some(Token { kind: TokenType::Class,.. }) => {
+                self.advance();
+                Ok(None)
+            },
+            Some(Token { kind: TokenType::Interface,.. }) => {
+                self.advance();
+                Ok(None)
+            },
+            Some(Token { kind: TokenType::Object,.. }) => {
+                self.advance();
+                Ok(None)
+            },
+            _ => Ok(None),
+        }
+    }
+
+    fn simple_type_decl(&mut self) -> Result<Option<String>, ParserError> {
+        match self.peek() {
+            Some(Token { kind: TokenType::Identifier(name), .. }) => {
+                self.advance();
+                Ok(Some(name))
+            },
+            _ => Ok(None),
+        }
+    }
+
     fn type_decl(&mut self) -> Result<Option<String>, ParserError> {
-        Ok(None)
+        if let Some(arr_decl) = self.array_type_decl()? {
+            Ok(Some(arr_decl))
+        } else if let Some(set_decl) = self.set_type_decl()? {
+            Ok(Some(set_decl))
+        } else if let Some(file_decl) = self.file_type_decl()? {
+            Ok(Some(file_decl))
+        } else if let Some(class_decl) = self.class_type_decl()? {
+            Ok(Some(class_decl))
+        } else if let Some(simple_decl) = self.simple_type_decl()? {
+            Ok(Some(simple_decl))
+        } else {
+            Ok(None)
+        }
     }
 
     fn formal_parameter(

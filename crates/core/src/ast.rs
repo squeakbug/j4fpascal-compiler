@@ -136,8 +136,10 @@ pub enum TypeDeclaration {
 
 #[derive(Debug, Clone)]
 pub struct VarDeclaration {
-    pub name: Token,
-    pub var_type: TypeDeclaration,
+    pub name: String,
+    pub var_type: String,
+    // Maybe must be annotated during semantic pass
+    pub init_value: Option<Box<Expr>>,
 }
 
 #[derive(Debug, Clone)]
@@ -156,7 +158,7 @@ pub struct ProcedureDeclaration {
 #[derive(Debug, Clone)]
 pub enum DeclSection {
     Type (Box<TypeDeclaration>),
-    Variable (Box<VarDeclaration>),
+    Variable (Box<Vec<VarDeclaration>>),
     Procedure (Box<ProcedureDeclaration>),
 }
 
@@ -168,6 +170,6 @@ pub struct Block {
 
 #[derive(Debug, Clone)]
 pub struct Program {
-    pub head: String,
+    pub head: Option<(String, Vec<String>)>,
     pub block: Box<Block>,
 }
