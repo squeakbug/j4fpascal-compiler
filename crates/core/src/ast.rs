@@ -141,10 +141,15 @@ pub struct VarDeclaration {
 }
 
 #[derive(Debug, Clone)]
-pub struct ProcedureDeclaration {
+pub struct ProcedureHeadDeclaration {
     pub name: String,
-    pub params: Vec<(String, String)>,
+    pub params: Vec<(String, Option<String>, Option<Box<Expr>>)>,
     pub return_type: Option<TypeDeclaration>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ProcedureDeclaration {
+    pub head: ProcedureHeadDeclaration,
     pub body: Box<Stmt>,
 }
 

@@ -12,8 +12,6 @@ pub fn read_file(filepath: &str) -> io::Result<String> {
 }
 
 fn main() -> io::Result<()> {
-    println!("j4fpascal 0.0.1. Type \"help\", \"copyright\", \"credits\" or \"license\" for more information. Type \"exit\" to quit.");
-
     let mut interpreter = Interpreter::new();
     let args: Vec<String> = std::env::args().collect();
     if args.len() > 1 {
@@ -21,6 +19,7 @@ fn main() -> io::Result<()> {
         interpreter.eval(&source).unwrap();
     } else {
         loop {
+            println!("j4fpascal 0.0.1. Type \"help\", \"copyright\", \"credits\" or \"license\" for more information. Type \"exit\" to quit.");
             print!("jpci> ");
             io::stdout().flush().unwrap();
             let mut input = String::new();

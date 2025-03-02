@@ -56,7 +56,12 @@ impl Callable for WriteProcedureValue {
         _executor: &mut Interpreter, 
         args: Vec<Value>
     ) -> Result<(), InterpreterError> {
-        print!("{:?}", args);
+        for arg in args {
+            match arg {
+                Value::String(s) => print!("{}", s),
+                v => print!("{}", v),
+            }
+        }
         Ok(())
     }
 
@@ -86,7 +91,8 @@ impl Callable for NativeProcedureValue {
     ) -> Result<(), InterpreterError> {
         executor.scope_enter()?;
         let def = &self.decl;
-        for (param, value) in def.params.iter().zip(args.into_iter()) {
+        let head = &def.head;
+        for (param, value) in head.params.iter().zip(args.into_iter()) {
             executor.environment.define(&param.0, value)?;
         }
         executor.visit_statement(&def.body)?;
@@ -94,7 +100,7 @@ impl Callable for NativeProcedureValue {
         Ok(())
     }
 
-    fn arity(&self) -> usize { self.decl.params.len() }
+    fn arity(&self) -> usize { self.decl.head.params.len() }
 }
 
 #[derive(Debug, Clone)]
@@ -272,7 +278,7 @@ impl Interpreter {
         let proc = ProcedureValue::Native(NativeProcedureValue {
             decl: decl.clone(),
         });
-        self.environment.define(&decl.name, Value::Procedure(proc))
+        self.environment.define(&decl.head.name, Value::Procedure(proc))
     }
 
     fn visit_decl_section(&mut self, section: &DeclSection) -> Result<(), InterpreterError> {
@@ -318,7 +324,13 @@ impl Interpreter {
                         proc.call(self, values?)?;
                         Ok(())
                     },
-                    None => Err(InterpreterError::NotImplemented),
+                    None => {
+                        if proc.arity() != 0 {
+                            return Err(InterpreterError::MismathedArgumentsCount);
+                        }
+                        proc.call(self, vec![])?;
+                        Ok(())
+                    },
                     _ => Err(InterpreterError::NotCallable),
                 }
             },
@@ -343,7 +355,7 @@ impl Interpreter {
                         }
                         Ok(())
                     },
-                    _ => Err(InterpreterError::NotImplemented),
+                    _ => Err(InterpreterError::MismatchedTypes),
                 };
                 self.scope_exit()?;
                 result
@@ -423,7 +435,7 @@ impl Interpreter {
                 let right = self.visit_expr(right)?;
                 match (left, right) {
                     (Value::UnsignedInteger(a), Value::UnsignedInteger(b)) => {
-                        match operator.token_type {
+                        match operator.kind {
                             lexer::TokenType::Plus => Ok(Value::UnsignedInteger(a + b)),
                             lexer::TokenType::Minus => Ok(Value::UnsignedInteger(a - b)),
                             lexer::TokenType::Star => Ok(Value::UnsignedInteger(a * b)),
@@ -432,7 +444,7 @@ impl Interpreter {
                         }
                     },
                     (Value::UnsignedReal(a), Value::UnsignedReal(b)) => {
-                        match operator.token_type {
+                        match operator.kind {
                             lexer::TokenType::Plus => Ok(Value::UnsignedReal(a + b)),
                             lexer::TokenType::Minus => Ok(Value::UnsignedReal(a - b)),
                             lexer::TokenType::Star => Ok(Value::UnsignedReal(a * b)),
@@ -447,13 +459,13 @@ impl Interpreter {
                 let right = self.visit_expr(right)?;
                 match right {
                     Value::UnsignedInteger(a) => {
-                        match operator.token_type {
+                        match operator.kind {
                             lexer::TokenType::Minus => Ok(Value::UnsignedInteger(-a)),
                             _ => Err(InterpreterError::NotImplemented),
                         }
                     },
                     Value::UnsignedReal(a) => {
-                        match operator.token_type {
+                        match operator.kind {
                             lexer::TokenType::Minus => Ok(Value::UnsignedReal(-a)),
                             _ => Err(InterpreterError::NotImplemented),
                         }
@@ -462,7 +474,7 @@ impl Interpreter {
                 }
             },
             Expr::Literal { value } => {
-                match value.token_type {
+                match value.kind {
                     lexer::TokenType::UnsignedInteger(ref num) => {
                         match num.parse::<i64>() {
                             Ok(num) => Ok(Value::UnsignedInteger(num)),
@@ -503,13 +515,15 @@ impl Interpreter {
     }
 
     pub fn eval(&mut self, exp: &str) -> Result<()> {
-        let mut lexer = Lexer::new();
-        let mut parser = Parser::new();
+        let mb_tokens = Lexer::new(exp.chars()).collect::<Vec<_>>();
+        let tokens = mb_tokens.into_iter().collect::<Result<Vec<_>, _>>()
+            .map_err(|err| Error::Lexer(err))?;
+        //dbg!(&tokens);
 
-        let tokens = lexer.lex(exp).map_err(|err| Error::Lexer(err))?;
-        dbg!(&tokens);
-        let ast = parser.parse(tokens).map_err(|err|Error::Parser(err))?;
-        dbg!(&ast);
+        let mut parser = Parser::new(tokens.into_iter());
+        let ast = parser.parse().map_err(|err|Error::Parser(err))?;
+        //dbg!(&ast);
+
         self.visit_program(&Box::new(ast)).map_err(|err| Error::Interpreter(err))
     }
 }

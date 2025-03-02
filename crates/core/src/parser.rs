@@ -1,8 +1,9 @@
+use core::error;
+use std::default;
+
 use crate::{
     ast::{
-        Block, CaseItem, CaseLabel, DeclSection, Designator, 
-        DesignatorItem, Expr, ProcedureDeclaration, Stmt, UnlabeledStmt,
-        Program, 
+        Block, CaseItem, CaseLabel, DeclSection, Designator, DesignatorItem, Expr, ProcedureDeclaration, ProcedureHeadDeclaration, Program, Stmt, TypeDeclaration, UnlabeledStmt, VarDeclaration
     },
     lexer::{SrcSpan, Token, TokenType},
 };
@@ -17,9 +18,28 @@ fn parser_error(kind: ParserErrorType, location: SrcSpan) -> ParserError {
     ParserError { kind, location }
 }
 
+fn error_tok(kind: ParserErrorType, prev_tok: &Token) -> ParserError {
+    parser_error(
+        kind, 
+        SrcSpan { start: prev_tok.start_pos, end: prev_tok.end_pos },
+    )
+}
+
+// TODO: make two types of functions:
+// expected_* - try to parse rule. If rule is not acceptable, then return Error
+// parse_* - try to parse rule. If rule is not acceptable, then return Ok(None)
+
 #[derive(Debug, Clone)]
 pub enum ParserErrorType {
     ExpectedProgram,
+    ExpectedIdentifier,
+    ExpectedExpression,
+    ExpectedLeftParen,
+    ExpectedToken { tok: TokenType },
+    ExpectedFormalParameter,
+    ExpectedActualParameter,
+    ExpectedUnlabeledStmt,
+    ExpectedBlock,
 }
 
 pub struct Parser<T: Iterator<Item = Token>> {
@@ -34,12 +54,15 @@ where
     T: Iterator<Item = Token>
 {
     pub fn new(input: T) -> Self {
-        Parser {
+        let mut parser = Parser {
             istream: input,
             tok0: None,
             tok1: None,
             errors: vec![],
-        }
+        };
+        parser.advance();
+        parser.advance();
+        parser
     }
 
     pub fn parse(&mut self) -> Result<Program, ParserError> {
@@ -54,7 +77,6 @@ where
 
     fn advance(&mut self) -> Option<Token> {
         let t = self.tok0.take();
-        let mut previous_newline = None;
         let mut nxt = match self.istream.next() {
             Some(tok) => Some(tok),
             None => None,
@@ -64,23 +86,33 @@ where
         t
     }
 
-    fn consume(&mut self, expected: TokenType) -> Result<Token, ParserError> {
+    fn consume(&mut self, expected: TokenType, pos: SrcSpan) -> Result<Token, ParserError> {
         match self.advance() {
-            Some(ref token@Token { ref kind, .. }) if *kind == expected => {
-                Ok(token.clone())
+            Some(token) if token.kind == expected => {
+                Ok(token)
             },
-            None => Err(ParserError::UnexpectedToken(self.current)),
-            _ => Err(ParserError::UnexpectedToken(self.current)),
+            Some(token) => {
+                Err(parser_error(
+                    ParserErrorType::ExpectedToken { tok: expected },
+                    SrcSpan { start: token.start_pos, end: token.end_pos }
+                ))
+            },
+            None => {
+                Err(parser_error(
+                    ParserErrorType::ExpectedToken { tok: expected },
+                    pos
+                ))
+            }
         }
     }
 
     fn synchronize(&mut self) {
         self.advance();
         while let Some(token) = self.peek() {
-            if token.token_type == TokenType::Semicolon {
+            if token.kind == TokenType::Semicolon {
                 return;
             }
-            match token.token_type {
+            match token.kind {
                 TokenType::Procedure
                 | TokenType::Function
                 | TokenType::Var
@@ -93,30 +125,52 @@ where
         }
     }
 
-    fn program_head(&mut self) -> Result<String, ParserError> {
-        self.consume(TokenType::Program)?;
-        let name = self.identifier().ok_or(ParserError::UnexpectedToken(self.current))?;
-        self.consume(TokenType::Semicolon)?;
-        Ok(name)
+    fn program_head(&mut self) -> Result<Option<String>, ParserError> {
+        if let Some(program_tok@Token { kind: TokenType::Program, .. }) = self.peek() {
+            self.advance();
+            let name = self.identifier().ok_or(error_tok(
+                ParserErrorType::ExpectedIdentifier, 
+                &program_tok
+            ))?;
+            self.consume(TokenType::Semicolon, program_tok.as_ref().into())?;
+            Ok(Some(name))
+        } else {
+            Ok(None)
+        }
     }
 
     fn program(&mut self) -> Result<Option<Program>, ParserError> {
-        let head = self.program_head()?;
-        let block = Box::new(self.block()?.unwrap());
-        self.consume(TokenType::Dot)?;
-        Ok(Some(Program { 
-            head,
-            block,
-        }))
+        if let Some(head) = self.program_head()? {
+            if let Some(block) = self.block()? {
+                self.consume(TokenType::Dot, SrcSpan { start: 0, end: 0 })?;
+                Ok(Some(Program { 
+                    head,
+                    block: Box::new(block),
+                }))
+            } else {
+                Err(parser_error(
+                    ParserErrorType::ExpectedBlock, 
+                    SrcSpan { start: 0, end: 0 }
+                ))
+            }
+        } else {
+            Ok(None)
+        }
     }
 
     fn block(&mut self) -> Result<Option<Block>, ParserError> {
         let decl_sections = self.decl_sections()?;
-        let body = Box::new(self.compound_statement()?.unwrap().into());
-        Ok(Some(Block {
-            decl_sections,
-            body,
-        }))
+        if let Some(stmt) = self.compound_statement()? {
+            Ok(Some(Block {
+                decl_sections,
+                body: Box::new(Stmt { 
+                    label: None,
+                    statement: Box::new(stmt),
+                })
+            }))
+        } else {
+            Ok(None)
+        }
     }
 
     fn decl_sections(&mut self) -> Result<Vec<DeclSection>, ParserError> {
@@ -137,7 +191,7 @@ where
 
     fn identifier(&mut self) -> Option<String> {
         match self.peek() {
-            Some(Token { token_type: TokenType::Identifier(ref name), .. }) => {
+            Some(Token { kind: TokenType::Identifier(ref name), .. }) => {
                 self.advance();
                 return Some(name.clone());
             },
@@ -157,23 +211,42 @@ where
         Ok(None)
     }
 
-    fn formal_parameter(&mut self) -> Result<Option<(String, String)>, ParserError> {
-        let parameter = self.identifier().unwrap();
-        let type_decl = self.type_decl()?.unwrap();
-        Ok(Some((parameter, type_decl)))
+    fn formal_parameter(
+        &mut self
+    ) -> Result<Option<(String, Option<String>, Option<Box<Expr>>)>, ParserError> {
+        if let Some(parameter) = self.identifier() {
+            let type_decl = self.type_decl()?;
+            if let Some(token@Token { kind: TokenType::Assignment, .. }) = self.peek() {
+                self.advance();
+                if let Some(default_val) = self.expression()? {
+                    Ok(Some((parameter, type_decl, Some(Box::new(default_val)))))
+                } else {
+                    Err(parser_error(
+                        ParserErrorType::ExpectedExpression,
+                        SrcSpan { start: token.start_pos, end: token.end_pos }
+                    ))
+                }
+            } else {
+                Ok(Some((parameter, type_decl, None)))
+            }
+        } else {
+            Ok(None)
+        }
     }
 
-    fn formal_parameter_list(&mut self) -> Result<Vec<(String, String)>, ParserError> {
+    fn formal_parameter_list(
+        &mut self
+    ) -> Result<Vec<(String, Option<String>, Option<Box<Expr>>)>, ParserError> {
         let mut parameters = vec![];
         if let Some(parameter) = self.formal_parameter()? {
             parameters.push(parameter);
             while let Some(token) = self.peek() {
-                if token.token_type == TokenType::Semicolon {
+                if token.kind == TokenType::Semicolon {
                     self.advance();
                     if let Some(parameter) = self.formal_parameter()? {
                         parameters.push(parameter);
                     } else {
-                        return Err(ParserError::UnexpectedToken(self.current));
+                        return Err(error_tok(ParserErrorType::ExpectedFormalParameter, &token));
                     }
                 } else {
                     break;
@@ -183,34 +256,46 @@ where
         return Ok(parameters);
     }
 
-    fn proc_decl_section(&mut self) -> Result<Option<ProcedureDeclaration>, ParserError> {
-        if let Some(Token { token_type: TokenType::Procedure, .. }) = self.peek() {
+    fn proc_decl_heading(&mut self) -> Result<Option<ProcedureHeadDeclaration>, ParserError> {
+        if let Some(proc_token@Token { kind: TokenType::Procedure, .. }) = self.peek() {
             self.advance();
-            self.consume(TokenType::Semicolon)?;
             match self.peek() {
-                Some(Token { token_type: TokenType::Identifier(ref name), .. }) => {
+                Some(ref ident_token@Token { kind: TokenType::Identifier(ref name), .. }) => {
                     self.advance();
                     match self.peek() {
-                        Some(Token { token_type: TokenType::LeftParen,.. }) => {
+                        Some(Token { kind: TokenType::LeftParen,.. }) => {
                             self.advance();
                             let params = self.formal_parameter_list()?;
-                            self.consume(TokenType::RightParen)?;
-                            let body = Box::new(self.compound_statement()?.unwrap());
-                            Ok(Some(ProcedureDeclaration {
+                            self.consume(TokenType::RightParen, ident_token.into())?;
+                            self.consume(TokenType::Semicolon, ident_token.into())?;
+                            Ok(Some(ProcedureHeadDeclaration {
                                 name: name.clone(),
                                 params,
                                 return_type: None,
-                                body: Box::new(Stmt {
-                                    label: None,
-                                    statement: body,
-                                }),
                             }))
-                        }
-                        _ => Err(ParserError::UnexpectedEOF(self.current)),
+                        },
+                        _ => Err(error_tok(ParserErrorType::ExpectedLeftParen, &ident_token))
                     }
                 },
-                None => Err(ParserError::UnexpectedEOF(self.current)),
-                _ => Ok(None),
+                _ => Err(error_tok(ParserErrorType::ExpectedIdentifier, &proc_token))
+            }
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn proc_decl_section(&mut self) -> Result<Option<ProcedureDeclaration>, ParserError> {
+        if let Some(head) = self.proc_decl_heading()? {
+            if let Some(body) = self.compound_statement()? {
+                Ok(Some(ProcedureDeclaration {
+                    head,
+                    body: Box::new(Stmt {
+                        label: None,
+                        statement: Box::new(body),
+                    }),
+                }))   
+            } else {
+                Ok(None)
             }
         } else {
             Ok(None)
@@ -219,26 +304,32 @@ where
 
     fn statement(&mut self) -> Result<Option<Stmt>, ParserError> {
         if let Some(token) = self.peek() {
-            if token.token_type == TokenType::Label {
+            if token.kind == TokenType::Label {
                 self.advance();
-                self.consume(TokenType::Colon)?;
+                self.consume(TokenType::Colon, token.as_ref().into())?;
                 match self.unlabeled_statement()? {
                     Some(statement) => {
-                        return Ok(Some(Stmt {
+                        Ok(Some(Stmt {
                             label: Some(token),
                             statement: Box::new(statement),
-                        }));
+                        }))
                     },
-                    None => return Err(ParserError::UnexpectedToken(self.current)),
+                    None => Err(error_tok(ParserErrorType::ExpectedUnlabeledStmt, &token)),
                 }
             } else {
-                return Ok(Some(Stmt {
-                    label: Some(token),
-                    statement: Box::new(self.unlabeled_statement()?.unwrap()),
-                }));
+                match self.unlabeled_statement()? {
+                    Some(statement) => {
+                        Ok(Some(Stmt {
+                            label: Some(token),
+                            statement: Box::new(statement),
+                        }))
+                    },
+                    None => Ok(None),
+                }
             }
+        } else {
+            Ok(None)
         }
-        Ok(None)
     }
 
     fn unlabeled_statement(&mut self) -> Result<Option<UnlabeledStmt>, ParserError> {
@@ -270,13 +361,13 @@ where
     fn goto_statement(&mut self) -> Result<Option<UnlabeledStmt>, ParserError> {
         if let Some(token) = self.peek() {
             match token {
-                Token { token_type: TokenType::Goto, .. } => {
+                Token { kind: TokenType::Goto, .. } => {
                     return Ok(Some(UnlabeledStmt::Goto { label: token }))
                 },
-                Token { token_type: TokenType::Break, .. } => {
+                Token { kind: TokenType::Break, .. } => {
                     return Ok(Some(UnlabeledStmt::Break))
                 },
-                Token { token_type: TokenType::Continue, .. } => {
+                Token { kind: TokenType::Continue, .. } => {
                     return Ok(Some(UnlabeledStmt::Continue))
                 },
                 _ => return Ok(None)
@@ -289,7 +380,7 @@ where
         let mut expressions = vec![];
         loop {
             if let Some(token) = self.peek() {
-                if token.token_type == TokenType::Colon {
+                if token.kind == TokenType::Colon {
                     self.advance();
                     let expression = Box::new(self.expression()?.unwrap());
                     expressions.push(expression)
@@ -312,12 +403,12 @@ where
         if let Some(parameter) = self.actual_parameter()? {
             parameters.push(parameter);
             while let Some(token) = self.peek() {
-                if token.token_type == TokenType::Comma {
+                if token.kind == TokenType::Comma {
                     self.advance();
                     if let Some(parameter) = self.actual_parameter()? {
                         parameters.push(parameter);
                     } else {
-                        return Err(ParserError::UnexpectedToken(self.current));
+                        return Err(error_tok(ParserErrorType::ExpectedActualParameter, &token))
                     }
                 } else {
                     break;
@@ -329,37 +420,37 @@ where
 
     fn procedure_call(&mut self) -> Result<Option<DesignatorItem>, ParserError> {
         match self.peek() {
-            Some(Token { token_type: TokenType::LeftParen,.. }) => {
+            Some(token@Token { kind: TokenType::LeftParen,.. }) => {
                 self.advance();
                 let arguments = self.parameter_list()?;
-                self.consume(TokenType::RightParen)?;
+                self.consume(TokenType::RightParen, token.as_ref().into())?;
                 Ok(Some(DesignatorItem::Call {
                     arguments,
                 }))
             }
-            _ => Err(ParserError::UnexpectedEOF(self.current)),
+            _ => Ok(None),
         }
     }
 
     fn array_access(&mut self) -> Result<Option<DesignatorItem>, ParserError> {
         match self.peek() {
-            Some(Token { token_type: TokenType::LeftBrack,.. }) => {
+            Some(token@Token { kind: TokenType::LeftBrack,.. }) => {
                 self.advance();
                 let indexes = self.expression_list()?;
-                self.consume(TokenType::RightBrack)?;
+                self.consume(TokenType::RightBrack, token.as_ref().into())?;
                 Ok(Some(DesignatorItem::ArrayAccess {
                     indexes,
                 }))
             }
-            _ => Err(ParserError::UnexpectedEOF(self.current)),
+            _ => Ok(None)
         }
     }
 
     fn designator_item(&mut self) -> Result<Option<DesignatorItem>, ParserError> {
         if let Some(array_access) = self.array_access()? {
-            return Ok(Some(array_access));
+            Ok(Some(array_access))
         } else if let Some(procedure_call) = self.procedure_call()? {
-            return Ok(Some(procedure_call));
+            Ok(Some(procedure_call))
         } else {
             Ok(None)
         }
@@ -367,32 +458,34 @@ where
 
     fn qualified_ident(&mut self) -> Result<Option<String>, ParserError> {
         match self.peek() {
-            Some(Token { token_type: TokenType::Identifier(name), .. }) => {
+            Some(Token { kind: TokenType::Identifier(name), .. }) => {
                 self.advance();
                 return Ok(Some(name));
             },
-            None => Err(ParserError::UnexpectedEOF(self.current)),
             _ => Ok(None),
         }
     }
 
     fn designator(&mut self) -> Result<Option<Designator>, ParserError> {
-        let name = self.qualified_ident()?.unwrap();
-        let mut items = vec![];
-        while let Some(item) = self.designator_item()? {
-            items.push(item);
+        if let Some(name) = self.qualified_ident()? {
+            let mut items = vec![];
+            while let Some(item) = self.designator_item()? {
+                items.push(item);
+            }
+            Ok(Some(Designator {
+                name,
+                items,
+            }))
+        } else {
+            Ok(None)
         }
-        Ok(Some(Designator {
-            name,
-            items,
-        }))
     }
 
     // TODO: add structured identifier
     fn simple_statement(&mut self) -> Result<Option<UnlabeledStmt>, ParserError> {
         if let Some(designator) = self.designator()? {
             if let Some(token) = self.peek() {
-                if token.token_type == TokenType::Assignment {
+                if token.kind == TokenType::Assignment {
                     self.advance();
                     let expression = self.expression()?;
                     return Ok(Some(UnlabeledStmt::Assigment {
@@ -416,15 +509,13 @@ where
         if let Some(statement) = self.statement()? {
             statements.push(Box::new(statement));
             while let Some(token) = self.peek() {
-                if token.token_type == TokenType::Semicolon {
+                if token.kind == TokenType::Semicolon {
                     self.advance();
-                    let statement = self.statement()?;
-                    match statement {
-                        Some(statement) => statements.push(Box::new(statement)),
-                        None => continue,
-                    }
                 } else {
-                    break;
+                    match self.statement()? {
+                        Some(statement) => statements.push(Box::new(statement)),
+                        None => break,
+                    }
                 }
             }
         }
@@ -432,24 +523,28 @@ where
     }
 
     fn compound_statement(&mut self) -> Result<Option<UnlabeledStmt>, ParserError> {
-        self.consume(TokenType::Begin)?;
-        let statements = self.statement_list()?;
-        self.consume(TokenType::End)?;
-        Ok(Some(UnlabeledStmt::Compound {
-            statements
-        }))
+        if let Some(begin_token@Token { kind: TokenType::Begin, .. }) = self.peek() {
+            self.advance();
+            let statements = self.statement_list()?;
+            self.consume(TokenType::End, begin_token.as_ref().into())?;
+            Ok(Some(UnlabeledStmt::Compound {
+                statements
+            }))
+        } else {
+            Ok(None)
+        }
     }
 
     fn if_statement(&mut self) -> Result<Option<UnlabeledStmt>, ParserError> {
         if let Some(token) = self.peek() {
-            if token.token_type == TokenType::If {
+            if token.kind == TokenType::If {
                 self.advance();
                 let condition = Box::new(self.expression()?.unwrap());
-                self.consume(TokenType::Then)?;
+                self.consume(TokenType::Then, token.as_ref().into())?;
                 let then_branch = Box::new(self.statement()?.unwrap());
                 let mut else_branch = None;
                 if let Some(token) = self.peek() {
-                    if token.token_type == TokenType::Else {
+                    if token.kind == TokenType::Else {
                         self.advance();
                         else_branch = Some(Box::new(self.statement()?.unwrap()));
                     }
@@ -467,7 +562,7 @@ where
     fn case_label(&mut self) -> Result<CaseLabel, ParserError> {
         let from = Box::new(self.expression()?.unwrap());
         if let Some(token) = self.peek() {
-            if token.token_type == TokenType::DotDot {
+            if token.kind == TokenType::DotDot {
                 self.advance();
                 let to = Box::new(self.expression()?.unwrap());
                 return Ok(CaseLabel::Range((from, to)));
@@ -479,14 +574,14 @@ where
     fn case_item(&mut self) -> Result<CaseItem, ParserError> {
         let mut labels = vec![self.case_label()?];
         while let Some(token) = self.peek() {
-            if token.token_type == TokenType::Comma {
+            if token.kind == TokenType::Comma {
                 self.advance();
                 labels.push(self.case_label()?);
             } else {
                 break;
             }
         }
-        self.consume(TokenType::Colon)?;
+        self.consume(TokenType::Colon, SrcSpan { start: 0, end: 0 })?;
         let statement = Box::new(self.statement()?.unwrap());
         Ok(CaseItem {
             labels,
@@ -496,22 +591,22 @@ where
 
     fn case_statement(&mut self) -> Result<Option<UnlabeledStmt>, ParserError> {
         if let Some(token) = self.peek() {
-            if token.token_type == TokenType::Case {
+            if token.kind == TokenType::Case {
                 self.advance();
                 let condition = Box::new(self.expression()?.unwrap());
-                self.consume(TokenType::Of)?;
+                self.consume(TokenType::Of, token.as_ref().into())?;
                 let mut case_items = vec![];
                 while let Ok(item) = self.case_item() {
                     case_items.push(Box::new(item));
                 }
                 let mut else_branch = None;
                 if let Some(token) = self.peek() {
-                    if token.token_type == TokenType::Else {
+                    if token.kind == TokenType::Else {
                         self.advance();
                         else_branch = Some(Box::new(self.statement()?.unwrap()));
                     }
                 }
-                self.consume(TokenType::End)?;
+                self.consume(TokenType::End, token.as_ref().into())?;
                 return Ok(Some(UnlabeledStmt::Case { 
                     condition, 
                     case_items,
@@ -524,10 +619,10 @@ where
 
     fn repeat_statement(&mut self) -> Result<Option<UnlabeledStmt>, ParserError> {
         if let Some(token) = self.peek() {
-            if token.token_type == TokenType::Repeat {
+            if token.kind == TokenType::Repeat {
                 self.advance();
                 let statements = self.statement_list()?;
-                self.consume(TokenType::Until)?;
+                self.consume(TokenType::Until, token.as_ref().into())?;
                 let expr = self.expression()?.unwrap();
                 return Ok(Some(UnlabeledStmt::Repeat {
                     statements,
@@ -540,10 +635,10 @@ where
 
     fn while_statement(&mut self) -> Result<Option<UnlabeledStmt>, ParserError> {
         if let Some(token) = self.peek() {
-            if token.token_type == TokenType::While {
+            if token.kind == TokenType::While {
                 self.advance();
                 let condition = Box::new(self.expression()?.unwrap());
-                self.consume(TokenType::Do)?;
+                self.consume(TokenType::Do, token.as_ref().into())?;
                 let statement = Box::new(self.statement()?.unwrap());
                 return Ok(Some(UnlabeledStmt::While {
                     condition,
@@ -556,14 +651,14 @@ where
 
     fn for_statement(&mut self) -> Result<Option<UnlabeledStmt>, ParserError> {
         if let Some(token) = self.peek() {
-            if token.token_type == TokenType::For {
+            if token.kind == TokenType::For {
                 self.advance();
                 let var = Box::new(self.designator()?.unwrap());
-                self.consume(TokenType::Assignment)?;
+                self.consume(TokenType::Assignment, token.as_ref().into())?;
                 let init = Box::new(self.expression()?.unwrap());
-                self.consume(TokenType::To)?;
+                self.consume(TokenType::To, token.as_ref().into())?;
                 let to = Box::new(self.expression()?.unwrap());
-                self.consume(TokenType::Do)?;
+                self.consume(TokenType::Do, token.as_ref().into())?;
                 let statement = Box::new(self.statement()?.unwrap());
                 return Ok(Some(UnlabeledStmt::For {
                     var,
@@ -597,7 +692,7 @@ where
     fn expression(&mut self) -> Result<Option<Expr>, ParserError> {
         let mut expr = self.simple_expression()?.unwrap();
         if let Some(token) = self.peek() {
-            match token.token_type {
+            match token.kind {
                 TokenType::Equal 
                 | TokenType::NotEqual
                 | TokenType::Less
@@ -622,7 +717,7 @@ where
     fn simple_expression(&mut self) -> Result<Option<Expr>, ParserError> {
         let mut expr = self.term()?.unwrap();
         if let Some(token) = self.peek() {
-            match token.token_type {
+            match token.kind {
                 TokenType::Plus | TokenType::Minus | TokenType::Or => {
                     self.advance();
                     let right = self.simple_expression()?.unwrap();
@@ -641,7 +736,7 @@ where
     fn term(&mut self) -> Result<Option<Expr>, ParserError> {
         let mut expr = self.signed_factor()?.unwrap();
         while let Some(token) = self.peek() {
-            match token.token_type {
+            match token.kind {
                 TokenType::Star | TokenType::Slash 
                 | TokenType::Div | TokenType::Mod
                 | TokenType::And => {
@@ -661,7 +756,7 @@ where
 
     fn signed_factor(&mut self) -> Result<Option<Expr>, ParserError> {
         if let Some(token) = self.peek() {
-            match token.token_type {
+            match token.kind {
                 TokenType::Plus | TokenType::Minus => {
                     self.advance();
                     let right = self.factor()?.unwrap();
@@ -673,7 +768,7 @@ where
                 _ => self.factor()
             }
         } else {
-            Err(ParserError::UnexpectedEOF(self.current))
+            Ok(None)
         }
     }
 
@@ -682,7 +777,7 @@ where
         let result = match self.peek() {
             // '@' factor
             Some(token@Token {
-                token_type: TokenType::Bleat,
+                kind: TokenType::Bleat,
                 ..
             }) => {
                 self.advance();
@@ -694,18 +789,18 @@ where
             },
             // DOUBLEAT factor
             Some(token@Token {
-                token_type: TokenType::DoubleBleat,
+                kind: TokenType::DoubleBleat,
                 ..
             }) => {
                 self.advance();
-                let expr = self.factor()?;
+                let _expr = self.factor()?;
                 Ok(Some(Expr::Literal {
                     value: token.clone(),
                 }))
             },
             // 'not' factor
             Some(token@Token {
-                token_type: TokenType::Not,
+                kind: TokenType::Not,
                 ..
             }) => {
                 self.advance();
@@ -717,7 +812,7 @@ where
             },
             // '^' factor
             Some(token@Token {
-                token_type: TokenType::Pointer2,
+                kind: TokenType::Pointer2,
                 ..
             }) => {
                 self.advance();
@@ -730,7 +825,7 @@ where
             // unsignedConstant
             Some(
                 token @ Token {
-                    token_type:
+                    kind:
                         TokenType::UnsignedInteger(_)
                         | TokenType::UnsignedReal(_)
                         | TokenType::StringLiteral(_)
@@ -746,7 +841,7 @@ where
             // bool_
             Some(
                 token @ Token {
-                    token_type:
+                    kind:
                         TokenType::True
                         | TokenType::False,
                     ..
@@ -758,16 +853,15 @@ where
                 }))
             },
             // LPAREN expression RPAREN
-            Some(Token {
-                token_type: TokenType::LeftParen,
+            Some(token@Token {
+                kind: TokenType::LeftParen,
                 ..
             }) => {
                 self.advance();
                 let expr = self.expression()?.unwrap();
-                self.consume(TokenType::RightParen)?;
+                self.consume(TokenType::RightParen, token.as_ref().into())?;
                 Ok(Some(expr))
             },
-            None => Err(ParserError::UnexpectedEOF(self.current)),
             _ => Ok(None),
         };
 

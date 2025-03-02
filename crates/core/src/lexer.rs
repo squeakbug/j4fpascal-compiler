@@ -105,6 +105,21 @@ pub struct Token {
     pub end_pos: usize,
 }
 
+impl AsRef<Token> for Token {
+    fn as_ref(&self) -> &Token {
+        self
+    }
+}
+
+impl From<&Token> for SrcSpan {
+    fn from(value: &Token) -> Self {
+        SrcSpan {
+            start: value.start_pos,
+            end: value.end_pos,
+        }
+    }
+}
+
 pub struct Lexer<T: Iterator<Item = char>> {
     istream: T,
     ostream: Vec<Token>,
@@ -237,21 +252,17 @@ where
         self.ostream.push(token);
     }
 
-    fn space(&mut self) {
-        while let Some(c) = self.peek() {
-            match c {
-                ' ' | '\t' | '\n' => {
-                    let _ = self.next_char();
-                }
-                _ => break,
-            }
+    fn is_space(&mut self, chr: char) -> bool {
+        match chr {
+            ' ' | '\t' | '\n' => true,
+            _ => false,
         }
     }
 
-    fn separator(&mut self) {
-        if let Some(';') = self.peek() {
-            self.add_tok1(TokenType::Semicolon);
-            self.next_char();
+    fn is_separator(&mut self, chr: char) -> bool {
+        match chr {
+            ';' => true,
+            _ => false,
         }
     }
 
@@ -417,13 +428,14 @@ where
         let mut literal = String::new();
         let start_pos = self.get_pos();
         loop {
-            match self.next_char() {
+            match self.peek() {
                 Some('\'') => {
                     break;
                 },
                 Some(chr) => {
                     // may cause reallocations, but it's not really important
                     literal.push(chr);
+                    self.next_char();
                 },
                 None => return Err(LexerError {
                     location: SrcSpan { start: start_pos, end: self.get_pos() },
@@ -523,13 +535,23 @@ where
             '+' => self.add_tok1(TokenType::Plus),
             '-' => self.add_tok1(TokenType::Minus),
             '*' => self.add_tok1(TokenType::Star),
-            '/' => self.add_tok1(TokenType::Slash),
             '(' => self.add_tok1(TokenType::LeftParen),
             ')' => self.add_tok1(TokenType::RightParen),
             '[' => self.add_tok1(TokenType::LeftBrack),
             ']' => self.add_tok1(TokenType::RightBrack),
             '=' => self.add_tok1(TokenType::Equal),
             ',' => self.add_tok1(TokenType::Comma),
+            '/' => {
+                self.next_char();
+                match self.peek() {
+                    Some('/') => {
+                        self.next_char();
+                        let comment = self.lex_comment();
+                        self.ostream.push(comment);
+                    },
+                    _ => self.add_tok1(TokenType::Slash),
+                }
+            },
             '<' => {
                 self.next_char();
                 match self.peek() {
@@ -566,7 +588,8 @@ where
                     _ => self.add_tok1(TokenType::Bleat),
                 }
             },
-            '"' => {
+            '\'' => {
+                self.next_char();
                 let string = self.lex_string_literal()?;
                 self.ostream.push(string);
             },
@@ -586,10 +609,12 @@ where
 
     fn consume_normal(&mut self) -> Result<()> {
         if let Some(chr) = self.chr0 {
-            self.space();
-            self.separator();
-
-            if self.is_ident_start(chr) {
+            if self.is_space(chr) {
+                self.next_char();
+            } else if self.is_separator(chr) {
+                self.add_tok1(TokenType::Semicolon);
+                self.next_char();
+            } else if self.is_ident_start(chr) {
                 let name = self.lex_ident()?;
                 self.add_tok(name);
             } else if self.is_number_start(chr, self.chr1) {
@@ -597,6 +622,7 @@ where
                 self.add_tok(num);
             } else {
                 self.consume_character(chr)?;
+                self.next_char();
             }
         } else {
             self.add_tok1(TokenType::Eof);
@@ -615,15 +641,15 @@ where
 
 impl<T> Iterator for Lexer<T>
 where
-    T: Iterator<Item = char,
+    T: Iterator<Item = char>,
 {
     type Item = Result<Token>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let token = self.lex();
+        let token = self.inner_next();
 
         match token {
-            Ok((_, Token::Eof, _)) => None,
+            Ok(Token { kind: TokenType::Eof, .. }) => None,
             r => Some(r),
         }
     }
@@ -635,11 +661,15 @@ mod tests {
 
     #[test]
     fn lex_arith() {
-        let mut lexer = Lexer::new("y = x / (1 + 2) * 4".chars());
+        let lexer = Lexer::new("y = x / (1 + 2) * 4".chars());
+        let result = lexer.into_iter().collect::<Vec<_>>();
+        let result = result.into_iter()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap().into_iter()
+            .map(|tok| tok.kind)
+            .collect::<Vec<_>>();
         assert_eq!(
-            lexer.lex().unwrap()
-                .into_iter()
-                .map(|token| token.kind).collect::<Vec<_>>(), 
+            result,
             vec![
                 TokenType::Identifier(String::from("y")),
                 TokenType::Assignment,
