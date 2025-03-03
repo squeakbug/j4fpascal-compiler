@@ -25,6 +25,7 @@
 ### Literature
 
 * [Crafting interpreters](https://craftinginterpreters.com/)
+* [Static Single Assignment Book](https://pfalcon.github.io/ssabook/latest/)
 * [Engineering: A Compiler](https://www.amazon.com/Engineering-Compiler-Keith-Cooper/dp/012088478X) - there is 3rd edition
 * [Мучник](https://www.amazon.com/Advanced-Compiler-Design-Implementation-Muchnick/dp/1558603204)
 * [Red dragon](https://www.amazon.com/Compilers-Principles-Techniques-Tools-2nd/dp/0321486811)

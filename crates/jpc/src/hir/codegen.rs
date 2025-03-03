@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::{self, Debug}, fs};
+use std::{collections::HashMap, fs, fmt, io::{BufWriter, Write}};
 
 use core::{
     ast::{
@@ -23,36 +23,20 @@ pub enum CodegenError {
 }
 
 #[derive(Debug, Clone)]
-pub struct Var {
-    pub number: usize,
-    pub use_count: usize,
+pub enum Type {
+    Real,
+    Integer,
+    String,
 }
 
-#[derive(Debug, Clone)]
-pub enum Instruction {
-    // Memory
-    Store,
-    Load,
-    LoadConstant { dst: Var, const_num: usize },
-
-    // Arithmetic operators
-    Add { dst: Var, src1: Var, src2: Var },
-    Sub { dst: Var, src1: Var, src2: Var },
-    Mul { dst: Var, src1: Var, src2: Var },
-    Div { dst: Var, src1: Var, src2: Var },
-    Mod { dst: Var, src1: Var, src2: Var },
-    Negate { dst: Var, src: Var },
-
-    // Login operators
-    LogAnd { dst: Var, src1: Var, src2: Var },
-    LogOr { dst: Var, src1: Var, src2: Var },
-    LogNot { dst: Var, src1: Var, src2: Var },
-    Eq { dst: Var, src1: Var, src2: Var },
-    Neq { dst: Var, src1: Var, src2: Var },
-    Lt { dst: Var, src1: Var, src2: Var },
-    Leq { dst: Var, src1: Var, src2: Var },
-    Gt { dst: Var, src1: Var, src2: Var },
-    Geq { dst: Var, src1: Var, src2: Var },
+impl fmt::Display for Type {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Type::Real => write!(f, "f64"),
+            Type::Integer => write!(f, "i64"),
+            Type::String => write!(f, "str"),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -60,8 +44,48 @@ pub enum Constant {
     Real(f64),
     Integer(i64),
     String(String),
-    Boolean(bool),
-    Null,
+}
+
+impl fmt::Display for Constant {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Real(v) => write!(f, "{}", v),
+            Self::Integer(v) => write!(f, "{}", v),
+            Self::String(v) => write!(f, "{}", v),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Var {
+    pub number: usize,
+    pub use_count: usize,
+    pub type_: Type,
+}
+
+#[derive(Debug, Clone)]
+pub enum Instruction {
+    // Memory access and adressing operations
+    Store { src: Var, dst: Var },
+    Load { dst: Var, src: Var },
+    LoadConst { dst: Var, num: usize },
+
+    // Arithmetic operators
+    Add { dst: Var, src1: Var, src2: Var },
+    Sub { dst: Var, src1: Var, src2: Var },
+    Mul { dst: Var, src1: Var, src2: Var },
+    Div { dst: Var, src1: Var, src2: Var },
+    Rem { dst: Var, src1: Var, src2: Var },
+    Negate { dst: Var, src: Var },
+
+    // Login operators
+    And { dst: Var, src1: Var, src2: Var },
+    Or { dst: Var, src1: Var, src2: Var },
+    Xor { dst: Var, src1: Var, src2: Var },
+
+    // Other operators
+    Icmp,
+    Phi,
 }
 
 pub struct CodeEmmiter {
@@ -85,9 +109,9 @@ impl CodeEmmiter {
         num
     }
 
-    fn add_var(&mut self, ) -> Var {
+    fn add_var(&mut self, type_: Type) -> Var {
         self.number += 1;
-        Var { number: self.number, use_count: 0 }
+        Var { number: self.number, use_count: 0, type_ }
     }
 
     fn visit_expr(&mut self, expr: &Box<Expr>) -> Result<Var, CodegenError> {
@@ -95,7 +119,7 @@ impl CodeEmmiter {
             Expr::Binary { left, operator, right } => {
                 let src1 = self.visit_expr(left)?;
                 let src2 = self.visit_expr(right)?;
-                let dst = self.add_var();
+                let dst = self.add_var(src1.type_.clone());
                 let inst = match operator.kind {
                     lexer::TokenType::Plus => Ok(Instruction::Add { dst: dst.clone(), src1, src2 }),
                     lexer::TokenType::Minus => Ok(Instruction::Sub { dst: dst.clone(), src1, src2 }),
@@ -110,7 +134,7 @@ impl CodeEmmiter {
                 let src = self.visit_expr(right)?;
                 match operator.kind {
                     lexer::TokenType::Minus => {
-                        let dst = self.add_var();
+                        let dst = self.add_var(src.type_.clone());
                         let inst = Instruction::Negate { dst: dst.clone(), src };
                         self.instructions.push(inst);
                         Ok(dst)
@@ -123,11 +147,11 @@ impl CodeEmmiter {
                     lexer::TokenType::UnsignedInteger(ref num) => {
                         match num.parse::<i64>() {
                             Ok(num) => {
-                                let dst = self.add_var();
-                                let const_num = self.add_const(Constant::Integer(num));
-                                let inst = Instruction::LoadConstant { 
+                                let dst = self.add_var(Type::Integer);
+                                let num = self.add_const(Constant::Integer(num));
+                                let inst = Instruction::LoadConst { 
                                     dst: dst.clone(), 
-                                    const_num
+                                    num
                                 };
                                 self.instructions.push(inst);
                                 Ok(dst)
@@ -138,9 +162,9 @@ impl CodeEmmiter {
                     lexer::TokenType::UnsignedReal(ref num) => {
                         match num.parse::<f64>() {
                             Ok(num) => {
-                                let dst = self.add_var();
-                                let const_num = self.add_const(Constant::Real(num));
-                                let inst = Instruction::LoadConstant { dst: dst.clone(), const_num };
+                                let dst = self.add_var(Type::Integer);
+                                let num = self.add_const(Constant::Real(num));
+                                let inst = Instruction::LoadConst { dst: dst.clone(), num };
                                 self.instructions.push(inst);
                                 Ok(dst)
                             },
@@ -148,30 +172,30 @@ impl CodeEmmiter {
                         }
                     },
                     lexer::TokenType::True => {
-                        let dst = self.add_var();
-                        let const_num = self.add_const(Constant::Boolean(true));
-                        let inst = Instruction::LoadConstant { dst: dst.clone(), const_num };
+                        let dst = self.add_var(Type::Integer);
+                        let num = self.add_const(Constant::Integer(1));
+                        let inst = Instruction::LoadConst { dst: dst.clone(), num };
                         self.instructions.push(inst);
                         Ok(dst)
                     },
                     lexer::TokenType::False => {
-                        let dst = self.add_var();
-                        let const_num = self.add_const(Constant::Boolean(false));
-                        let inst = Instruction::LoadConstant { dst: dst.clone(), const_num };
+                        let dst = self.add_var(Type::Integer);
+                        let num = self.add_const(Constant::Integer(0));
+                        let inst = Instruction::LoadConst { dst: dst.clone(), num };
                         self.instructions.push(inst);
                         Ok(dst)
                     },
                     lexer::TokenType::Nil => {
-                        let dst = self.add_var();
-                        let const_num = self.add_const(Constant::Null);
-                        let inst = Instruction::LoadConstant { dst: dst.clone(), const_num };
+                        let dst = self.add_var(Type::Integer);
+                        let num = self.add_const(Constant::Integer(0));
+                        let inst = Instruction::LoadConst { dst: dst.clone(), num };
                         self.instructions.push(inst);
                         Ok(dst)
                     },
                     lexer::TokenType::StringLiteral(ref val) => {
-                        let dst = self.add_var();
-                        let const_num = self.add_const(Constant::String(val.clone()));
-                        let inst = Instruction::LoadConstant { dst: dst.clone(), const_num };
+                        let dst = self.add_var(Type::String);
+                        let num = self.add_const(Constant::String(val.clone()));
+                        let inst = Instruction::LoadConst { dst: dst.clone(), num };
                         self.instructions.push(inst);
                         Ok(dst)
                     },
@@ -223,6 +247,12 @@ impl CodeEmmiter {
                 let _value = self.visit_expr(right)?;
                 Ok(())
             },
+            UnlabeledStmt::Compound { statements } => {
+                for statement in statements {
+                    self.visit_statement(statement)?;
+                }
+                Ok(())
+            },
             _ => Ok(())
         }
     }
@@ -232,6 +262,96 @@ impl CodeEmmiter {
             self.visit_decl_section(section)?;
         }
         self.visit_statement(&block.body)
+    }
+
+    fn dump_inst(&self, f: &mut BufWriter<fs::File>, inst: &Instruction) -> std::io::Result<()> {
+        use Instruction::*;
+
+        match inst {
+            // Memory access and adressing operations
+            Store { src, dst } => {
+                write!(f, "store {} %{}, %{}", src.type_, src.number, dst.number)
+            },
+            Load { dst, src } => {
+                write!(f, "%{:<4} = load {}, %{}", dst.number, dst.type_, src.number)
+            },
+            LoadConst { dst, num } => {
+                write!(f, "%{:<4} = const {}, {}", dst.number, dst.type_, self.constants[*num])
+            },
+            // Arithmetic operators
+            Add { dst, src1, src2 } => {
+                write!(
+                    f, "%{:<4} = add {} %{}, %{}", 
+                    dst.number, src1.type_, 
+                    src1.number, src2.number
+                )
+            },
+            Sub { dst, src1, src2 } => {
+                write!(
+                    f, "%{:<4} = sub {} %{}, %{}", 
+                    dst.number, src1.type_, 
+                    src1.number, src2.number
+                )
+            },
+            Mul { dst, src1, src2 } => {
+                write!(
+                    f, "%{:<4} = mul {} %{}, %{}", 
+                    dst.number, src1.type_, 
+                    src1.number, src2.number
+                )
+            },
+            Div { dst, src1, src2 } => {
+                write!(
+                    f, "{:<4} = div {} %{}, %{}", 
+                    dst.number, src1.type_, 
+                    src1.number, src2.number
+                )
+            },
+            Rem { dst, src1, src2 } => {
+                write!(
+                    f, "%{:<4} = rem {} %{}, %{}", 
+                    dst.number, src1.type_, 
+                    src1.number, src2.number
+                )
+            },
+            Negate { dst, src } => {
+                write!(f, "%{:<4} = neg %{}", dst.number, src.number)
+            },
+
+            // Logic operators
+            And { dst, src1, src2 } => {
+                write!(
+                    f, "%{:<4} = and {} %{}, %{}", 
+                    dst.number, src1.type_, 
+                    src1.number, src2.number
+                )
+            },
+            Or { dst, src1, src2 } => {
+                write!(
+                    f, "%{:<4} = or {} %{}, %{}", 
+                    dst.number, src1.type_, 
+                    src1.number, src2.number
+                )
+            },
+            Xor { dst, src1, src2 } => {
+                write!(
+                    f, "%{:<4} = xor {} %{}, %{}", 
+                    dst.number, src1.type_, 
+                    src1.number, src2.number
+                )
+            },
+            // Other operators
+            Icmp  => write!(f, "icmp"),
+            Phi => write!(f, "phi"),
+        }
+    }
+
+    pub fn dump(&self, f: &mut BufWriter<fs::File>) -> std::io::Result<()> {
+        for inst in self.instructions.iter() {
+            self.dump_inst(f, inst)?;
+            writeln!(f)?;
+        }
+        Ok(())
     }
 
     pub fn visit_program(&mut self, program: &Box<Program>) -> Result<(), CodegenError> {

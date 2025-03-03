@@ -1,6 +1,6 @@
 # Parsing
 
-## Single pass compilers, old machines and Vaughan Pratt’s "top-down operator precedence parsing"
+## Single pass compilers, old machines and Vaughan Pratt’s "top-down operator precedence parsing" (Анализатор Уорли)
 
 This method of parsing doesn't require building AST for code emition
 
@@ -18,3 +18,8 @@ Why do people use tools like Yacc, Flex, ANTLR, etc.? Recursive descent parsing 
 > For the record, I don’t claim immunity to this affliction.
 > 
 > *Crafting interpreters*
+
+-- --
+
+* [Example for C compiler](https://github.com/ssloy/tinycompiler) и [статья на Хабре](https://habr.com/ru/articles/786158/) с описанием проекта. Здесь называется анализатором Уорли
+* [Crafting interpreters](https://craftinginterpreters.com/). ЗЗдесь называется парсером Пратта

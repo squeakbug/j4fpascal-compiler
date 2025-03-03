@@ -3,7 +3,7 @@ mod hir;
 
 use core::{lexer::Lexer, parser::Parser};
 use std::{
-    env, fs::{self, File}, io::{self, Read}
+    env, fs::{self, File}, io::{self, BufWriter, Read}
 };
  
 use hir::codegen::CodeEmmiter;
@@ -35,6 +35,8 @@ fn main() -> io::Result<()> {
     fs::write("ast.txt", format!("{:#?}", &ast)).unwrap();
 
     gen.visit_program(&Box::new(ast)).expect("Failed to codegen");
+    let file = File::create("hir.txt")?;
+    gen.dump(&mut BufWriter::new(file))?;
 
     Ok(())
 }
