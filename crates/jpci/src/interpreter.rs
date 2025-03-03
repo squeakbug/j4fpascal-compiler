@@ -2,14 +2,18 @@ use std::{collections::HashMap, fmt::{self, Debug}, fs};
 
 use core::{
     ast::{
-        Block, DeclSection, DesignatorItem, Expr, ProcedureDeclaration, Program, Stmt, TypeDeclaration, UnlabeledStmt, VarDeclaration
+        Block, DeclSection, DesignatorItem, Expr, ProcedureDeclaration, 
+        Program, Stmt, TypeDeclaration, UnlabeledStmt, VarDeclaration,
     },
     lexer::{self, Lexer}, 
     parser::{Parser, ParserError},
     sema::SemanticError,
 };
 
-use crate::callable::{Callable, NativeProcedureValue, ProcedureValue, ReadProcedureValue, ReadlnProcedureValue, WriteProcedureValue, WritelnProcedureValue};
+use crate::callable::{
+    Callable, NativeProcedureValue, ProcedureValue, ReadProcedureValue,
+    ReadlnProcedureValue, WriteProcedureValue, WritelnProcedureValue
+};
 
 pub type Result<Ok, Err = Error> = std::result::Result<Ok, Err>;
 

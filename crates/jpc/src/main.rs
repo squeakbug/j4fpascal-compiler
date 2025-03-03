@@ -1,13 +1,12 @@
 mod riscv;
-mod ir;
+mod hir;
 
+use core::{lexer::Lexer, parser::Parser};
 use std::{
-    env,
-    io::{self, Read},
-    fs::File,
+    env, fs::{self, File}, io::{self, Read}
 };
  
-use riscv::codegen::CodeEmmiter;
+use hir::codegen::CodeEmmiter;
 
 pub fn read_file(filepath: &str) -> io::Result<String> {
     let mut file = File::open(filepath)?;
@@ -25,7 +24,17 @@ fn main() -> io::Result<()> {
 
     let mut gen = CodeEmmiter::new();
     let source = read_file(&args[1])?;
-    let result = gen.codegen(&source).expect("Failed to codegen");
+
+    let mb_tokens = Lexer::new(source.chars()).collect::<Vec<_>>();
+    let tokens = mb_tokens.into_iter().collect::<Result<Vec<_>, _>>()
+        .expect("Failed to scan");
+    fs::write("tokens.txt", format!("{:#?}", &tokens)).unwrap();
+
+    let mut parser = Parser::new(tokens.into_iter());
+    let ast = parser.parse().expect("Failed to parse");
+    fs::write("ast.txt", format!("{:#?}", &ast)).unwrap();
+
+    gen.visit_program(&Box::new(ast)).expect("Failed to codegen");
 
     Ok(())
 }
