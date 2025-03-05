@@ -17,7 +17,7 @@ fn main() -> io::Result<()> {
     let args: Vec<String> = std::env::args().collect();
     if args.len() > 1 {
         let source = read_file(&args[1])?;
-        interpreter.eval(&source).unwrap();
+        interpreter.eval(&source);
     } else {
         loop {
             println!("j4fpascal 0.0.1. Type \"help\", \"copyright\", \"credits\" or \"license\" for more information. Type \"exit\" to quit.");
@@ -32,13 +32,7 @@ fn main() -> io::Result<()> {
                 println!("Leaving JPCi.");
                 break;
             }
-
-            match interpreter.eval(&input) {
-                Ok(_) => println!(""),
-                Err(e) => println!("Error: {:?}", e),
-            }
-
-            dbg!(&interpreter);
+            interpreter.eval(&input);
         }
     }
 

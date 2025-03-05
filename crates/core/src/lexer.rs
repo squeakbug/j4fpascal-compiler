@@ -1,3 +1,5 @@
+use std::path::Display;
+
 pub type Result<Ok, Err = LexerError> = std::result::Result<Ok, Err>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -130,13 +132,26 @@ pub struct SrcSpan {
     pub end: usize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LexerError {
     pub location: SrcSpan,
     pub kind: LexerErrorType,
 }
 
-#[derive(Debug)]
+impl LexerError {
+    pub fn details(&self) -> (String, Vec<String>) {
+        match &self.kind {
+            LexerErrorType::UnrecognizedToken { tok } => (format!("Unrecognized token: '{tok}'"), vec![]),
+            LexerErrorType::MissingExponent => ("Missing exponent".into(), vec![]),
+            LexerErrorType::UnterminatedStringLiteral => ("Unterminated string literal".into(), vec![]),
+            LexerErrorType::RadixIntNoValue => ("Radix int no value".into(), vec![]),
+            LexerErrorType::DigitOutOfRadix => ("Digit out of radix".into(), vec![]),
+            LexerErrorType::TooBigValue => ("Too big value".into(), vec![]),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum LexerErrorType {
     UnrecognizedToken { tok: char },  
     MissingExponent,                  // For example 100e - there is no number after 'e'

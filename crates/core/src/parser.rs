@@ -11,6 +11,24 @@ pub struct ParserError {
     pub kind: ParserErrorType,
 }
 
+impl ParserError {
+    pub fn details(&self) -> (String, Vec<String>) {
+        match &self.kind {
+            ParserErrorType::ExpectedProgram => ("Expected program".into(), vec![]),
+            ParserErrorType::ExpectedIdentifier => ("Expected identifier".into(), vec![]),
+            ParserErrorType::ExpectedExpression => ("Expected expression".into(), vec![]),
+            ParserErrorType::ExpectedLeftParen => ("Expected '('".into(), vec![]),
+            ParserErrorType::ExpectedToken { tok } => (format!("Expected '{:#?}'", tok), vec![]),
+            ParserErrorType::ExpectedFormalParameter => ("Expected formal parameter".into(), vec![]),
+            ParserErrorType::ExpectedActualParameter => ("Expected actual parameter".into(), vec![]),
+            ParserErrorType::ExpectedUnlabeledStmt => ("Expected unlabeled statement".into(), vec![]),
+            ParserErrorType::ExpectedBlock => ("Expected block".into(), vec![]),
+            ParserErrorType::ExpectedTypeDeclaration => ("Expected type declaration".into(), vec![]),
+            ParserErrorType::UnexpectedEof => ("Unexpected EOF".into(), vec![]),
+        }
+    }
+}
+
 fn parser_error(kind: ParserErrorType, location: SrcSpan) -> ParserError {
     ParserError { kind, location }
 }
@@ -26,7 +44,7 @@ fn error_tok(kind: ParserErrorType, prev_tok: &Token) -> ParserError {
 // expected_* - try to parse rule. If rule is not acceptable, then return Error
 // parse_* - try to parse rule. If rule is not acceptable, then return Ok(None)
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ParserErrorType {
     ExpectedProgram,
     ExpectedIdentifier,
@@ -38,6 +56,7 @@ pub enum ParserErrorType {
     ExpectedUnlabeledStmt,
     ExpectedBlock,
     ExpectedTypeDeclaration,
+    UnexpectedEof,
 }
 
 pub struct Parser<T: Iterator<Item = Token>> {

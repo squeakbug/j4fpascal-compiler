@@ -4,20 +4,17 @@ use core::{
     ast::{
         Block, DeclSection, DesignatorItem, Expr, ProcedureDeclaration, 
         Program, Stmt, TypeDeclaration, UnlabeledStmt, VarDeclaration,
-    },
-    lexer::{self, Lexer}, 
-    parser::{Parser, ParserError},
-    sema::SemanticError,
+    }, error::{self, Error}, lexer::{self, Lexer}, parser::Parser,
 };
+
+use camino::Utf8PathBuf;
 
 use crate::callable::{
     Callable, NativeProcedureValue, ProcedureValue, ReadProcedureValue,
     ReadlnProcedureValue, WriteProcedureValue, WritelnProcedureValue
 };
 
-pub type Result<Ok, Err = Error> = std::result::Result<Ok, Err>;
-
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum InterpreterError {
     NotImplemented,
     UndefinedVariable,
@@ -28,15 +25,6 @@ pub enum InterpreterError {
     MismathedArgumentsCount,
     AlreadyDefined,
 }
-
-#[derive(Debug)]
-pub enum Error {
-    Lexer(lexer::LexerError),
-    Parser(ParserError),
-    Semantic(SemanticError),
-    Interpreter(InterpreterError),
-}
-
 
 /// Result of tree-walking
 #[derive(Debug, Clone)]
@@ -433,16 +421,24 @@ impl Interpreter {
         self.visit_block(&program.block)
     }
 
-    pub fn eval(&mut self, exp: &str) -> Result<()> {
+    pub fn eval(&mut self, exp: &str) {
         let mb_tokens = Lexer::new(exp.chars()).collect::<Vec<_>>();
         let tokens = mb_tokens.into_iter().collect::<Result<Vec<_>, _>>()
-            .map_err(|err| Error::Lexer(err))?;
+            .map_err(|error| Error::Lexer { 
+                path: Utf8PathBuf::from(exp),
+                src: exp.to_string(),
+                error,
+             }).unwrap();
         fs::write("tokens.txt", format!("{:#?}", &tokens)).unwrap();
 
         let mut parser = Parser::new(tokens.into_iter());
-        let ast = parser.parse().map_err(|err|Error::Parser(err))?;
+        let ast = parser.parse().map_err(|err| Error::Parser {
+            path: Utf8PathBuf::from(exp),
+            src: exp.to_string(),
+            error: err,
+        }).unwrap();
         fs::write("ast.txt", format!("{:#?}", &ast)).unwrap();
 
-        self.visit_program(&Box::new(ast)).map_err(|err| Error::Interpreter(err))
+        self.visit_program(&Box::new(ast)).unwrap()
     }
 }

@@ -9,3 +9,4 @@ edition = "2021"
 core = { workspace = true }
 rpds = { workspace = true }
 thiserror = { workspace = true }
+camino = { workspace = true }
