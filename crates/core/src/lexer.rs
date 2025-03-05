@@ -1,5 +1,3 @@
-use std::path::Display;
-
 pub type Result<Ok, Err = LexerError> = std::result::Result<Ok, Err>;
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -122,6 +122,11 @@ pub enum ProcedureValue {
     Readln(ReadlnProcedureValue),
 }
 
+#[derive(Debug, Clone)]
+pub enum {
+    FunctionValue
+}
+
 impl Callable for ProcedureValue {
     fn arity(&self) -> usize {
         match self {

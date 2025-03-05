@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::lexer::Token;
 
 #[derive(Debug, Clone)]
@@ -112,32 +114,43 @@ pub enum UnlabeledStmt {
 }
 
 #[derive(Debug, Clone)]
-pub enum TypeDeclaration {
+pub enum TypeDecl {
     ArrayType {
-
+        indexes: Vec<(Box<Expr>, Box<Expr>)>,
+        sub_type: Box<TypeDecl>,
+    },
+    ClassType {
+        parent: Vec<String>,
+        fields: Vec<(String, Box<TypeDecl>)>,
     },
     RecordType {
-
+        fields: Vec<(String, Box<TypeDecl>)>,
     },
     SetType {
-
+        base: Box<TypeDecl>,
     },
     FileType {
-
+        base: Box<TypeDecl>,
     },
-    ScalarType {
-        identifiers: Vec<String>,
+    Pointer {
+        base: Box<TypeDecl>,
     },
     SubrangeType {
-        from: Box<Token>,
-        to: Box<Token>,
+        from: Box<Expr>,
+        to: Box<Expr>,
     },
+    EnumType {
+        values: HashMap<String, Box<Expr>>,
+    },
+    SimpleType {
+        ident: String,
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct VarDeclaration {
     pub name: String,
-    pub var_type: String,
+    pub var_type: TypeDecl,
     // Maybe must be annotated during semantic pass
     pub init_value: Option<Box<Expr>>,
 }
@@ -145,8 +158,8 @@ pub struct VarDeclaration {
 #[derive(Debug, Clone)]
 pub struct ProcedureHeadDeclaration {
     pub name: String,
-    pub params: Vec<(String, Option<String>, Option<Box<Expr>>)>,
-    pub return_type: Option<TypeDeclaration>,
+    pub params: Vec<(String, Option<TypeDecl>, Option<Box<Expr>>)>,
+    pub return_type: Option<TypeDecl>,
 }
 
 #[derive(Debug, Clone)]
@@ -156,10 +169,18 @@ pub struct ProcedureDeclaration {
 }
 
 #[derive(Debug, Clone)]
+pub struct TypeDeclaration {
+    pub ident: String,
+    pub decl: TypeDecl,
+}
+
+#[derive(Debug, Clone)]
 pub enum DeclSection {
-    Type (Box<TypeDeclaration>),
-    Variable (Box<Vec<VarDeclaration>>),
-    Procedure (Box<ProcedureDeclaration>),
+    Label (Vec<String>),
+    Const (Vec<(String, Box<Expr>)>),
+    Type (Vec<TypeDeclaration>),
+    Variable (Vec<VarDeclaration>),
+    Procedure (ProcedureDeclaration),
 }
 
 #[derive(Debug, Clone)]

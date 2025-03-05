@@ -1,6 +1,8 @@
 use crate::{
     ast::{
-        Block, CaseItem, CaseLabel, DeclSection, Designator, DesignatorItem, Expr, ProcedureDeclaration, ProcedureHeadDeclaration, Program, Stmt, TypeDeclaration, UnlabeledStmt, VarDeclaration
+        Block, CaseItem, CaseLabel, DeclSection, Designator, DesignatorItem, Expr,
+        ProcedureDeclaration, ProcedureHeadDeclaration, Program, Stmt,
+        TypeDeclaration, UnlabeledStmt, VarDeclaration, TypeDecl,
     },
     lexer::{SrcSpan, Token, TokenType},
 };
@@ -224,12 +226,16 @@ where
     fn decl_sections(&mut self) -> Result<Vec<DeclSection>, ParserError> {
         let mut declarations = vec![];
         loop {
-            if let Some(declaration) = self.type_decl_section()? {
-                declarations.push(DeclSection::Type(Box::new(declaration)));
-            } else if let Some(declaration) = self.proc_decl_section()? {
-                declarations.push(DeclSection::Procedure(Box::new(declaration)));
+            if let Some(label_declarations) = self.label_decl_section()? {
+                declarations.push(DeclSection::Label(label_declarations));
+            } else if let Some(const_declarations) = self.const_decl_section()? {
+                declarations.push(DeclSection::Const(const_declarations));
+            } else if let Some(type_declarations) = self.type_decl_section()? {
+                declarations.push(DeclSection::Type(type_declarations));
             } else if let Some(declaration) = self.var_decl_section()? {
-                declarations.push(DeclSection::Variable(Box::new(declaration)));
+                declarations.push(DeclSection::Variable(declaration));
+            } else if let Some(declaration) = self.proc_decl_section()? {
+                declarations.push(DeclSection::Procedure(declaration));
             } else {
                 break;
             }
@@ -307,11 +313,19 @@ where
         }
     }
 
-    fn type_decl_section(&mut self) -> Result<Option<TypeDeclaration>, ParserError> {
+    fn const_decl_section(&mut self) -> Result<Option<Vec<(String, Box<Expr>)>>, ParserError> {
         Ok(None)
     }
 
-    fn array_type_decl(&mut self) -> Result<Option<String>, ParserError> {
+    fn label_decl_section(&mut self) -> Result<Option<Vec<String>>, ParserError> {
+        Ok(None)
+    } 
+
+    fn type_decl_section(&mut self) -> Result<Option<Vec<TypeDeclaration>>, ParserError> {
+        Ok(None)
+    }
+
+    fn array_type_decl(&mut self) -> Result<Option<TypeDecl>, ParserError> {
         match self.peek() {
             Some(Token { kind: TokenType::Array,.. }) => {
                 self.advance();
@@ -321,27 +335,7 @@ where
         }
     }
 
-    fn set_type_decl(&mut self) -> Result<Option<String>, ParserError> {
-        match self.peek() {
-            Some(Token { kind: TokenType::Set,.. }) => {
-                self.advance();
-                Ok(None)
-            },
-            _ => Ok(None),
-        }
-    }
-
-    fn file_type_decl(&mut self) -> Result<Option<String>, ParserError> {
-        match self.peek() {
-            Some(Token { kind: TokenType::File,.. }) => {
-                self.advance();
-                Ok(None)
-            },
-            _ => Ok(None),
-        }
-    }
-
-    fn class_type_decl(&mut self) -> Result<Option<String>, ParserError> {
+    fn class_type_decl(&mut self) -> Result<Option<TypeDecl>, ParserError> {
         match self.peek() {
             Some(Token { kind: TokenType::Record,.. }) => {
                 self.advance();
@@ -363,25 +357,71 @@ where
         }
     }
 
-    fn simple_type_decl(&mut self) -> Result<Option<String>, ParserError> {
+    fn record_type_decl(&mut self) -> Result<Option<TypeDecl>, ParserError> {
+        Ok(None)
+    }
+
+    fn set_type_decl(&mut self) -> Result<Option<TypeDecl>, ParserError> {
         match self.peek() {
-            Some(Token { kind: TokenType::Identifier(name), .. }) => {
+            Some(Token { kind: TokenType::Set,.. }) => {
                 self.advance();
-                Ok(Some(name))
+                Ok(None)
             },
             _ => Ok(None),
         }
     }
 
-    fn type_decl(&mut self) -> Result<Option<String>, ParserError> {
+    fn file_type_decl(&mut self) -> Result<Option<TypeDecl>, ParserError> {
+        match self.peek() {
+            Some(Token { kind: TokenType::File,.. }) => {
+                self.advance();
+                Ok(None)
+            },
+            _ => Ok(None),
+        }
+    }
+
+    fn pointer_type_decl(&mut self) -> Result<Option<TypeDecl>, ParserError> {
+        Ok(None)
+    }
+
+    fn subrange_type_decl(&mut self) -> Result<Option<TypeDecl>, ParserError> {
+        Ok(None)
+    }
+
+    fn enum_type_decl(&mut self) -> Result<Option<TypeDecl>, ParserError> {
+        Ok(None)
+    }
+
+    fn simple_type_decl(&mut self) -> Result<Option<TypeDecl>, ParserError> {
+        match self.peek() {
+            Some(Token { kind: TokenType::Identifier(name), .. }) => {
+                self.advance();
+                Ok(Some(TypeDecl::SimpleType{
+                    ident: name
+                }))
+            },
+            _ => Ok(None),
+        }
+    }
+
+    fn type_decl(&mut self) -> Result<Option<TypeDecl>, ParserError> {
         if let Some(arr_decl) = self.array_type_decl()? {
             Ok(Some(arr_decl))
+        } else if let Some(set_decl) = self.class_type_decl()? {
+            Ok(Some(set_decl))
+        } else if let Some(set_decl) = self.record_type_decl()? {
+            Ok(Some(set_decl))
         } else if let Some(set_decl) = self.set_type_decl()? {
             Ok(Some(set_decl))
         } else if let Some(file_decl) = self.file_type_decl()? {
             Ok(Some(file_decl))
-        } else if let Some(class_decl) = self.class_type_decl()? {
-            Ok(Some(class_decl))
+        } else if let Some(file_decl) = self.pointer_type_decl()? {
+            Ok(Some(file_decl))
+        } else if let Some(file_decl) = self.subrange_type_decl()? {
+            Ok(Some(file_decl))
+        } else if let Some(file_decl) = self.enum_type_decl()? {
+            Ok(Some(file_decl))
         } else if let Some(simple_decl) = self.simple_type_decl()? {
             Ok(Some(simple_decl))
         } else {
@@ -391,7 +431,7 @@ where
 
     fn formal_parameter(
         &mut self
-    ) -> Result<Option<(String, Option<String>, Option<Box<Expr>>)>, ParserError> {
+    ) -> Result<Option<(String, Option<TypeDecl>, Option<Box<Expr>>)>, ParserError> {
         if let Some(parameter) = self.identifier() {
             let type_decl = self.type_decl()?;
             if let Some(token@Token { kind: TokenType::Assignment, .. }) = self.peek() {
@@ -414,7 +454,7 @@ where
 
     fn formal_parameter_list(
         &mut self
-    ) -> Result<Vec<(String, Option<String>, Option<Box<Expr>>)>, ParserError> {
+    ) -> Result<Vec<(String, Option<TypeDecl>, Option<Box<Expr>>)>, ParserError> {
         let mut parameters = vec![];
         if let Some(parameter) = self.formal_parameter()? {
             parameters.push(parameter);

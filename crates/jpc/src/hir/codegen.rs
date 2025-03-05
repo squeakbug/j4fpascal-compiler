@@ -83,9 +83,17 @@ pub enum Instruction {
     Or { dst: Var, src1: Var, src2: Var },
     Xor { dst: Var, src1: Var, src2: Var },
 
+    // Debug
+    
     // Other operators
     Icmp,
     Phi,
+}
+
+#[derive(Debug, Clone)]
+pub struct Module {
+    pub instructions: Vec<Instruction>,
+    pub constants: Vec<Constant>,
 }
 
 pub struct CodeEmmiter {
@@ -215,16 +223,44 @@ impl CodeEmmiter {
     }
 
     fn visit_procedure_declaration(
-        &mut self, 
-        decl: &Box<ProcedureDeclaration>
+        &mut self,
+        decl: &ProcedureDeclaration,
+    ) -> Result<(), CodegenError> {
+        Ok(())
+    }
+
+    fn visit_label_declaration(
+        &mut self,
+        decl: &str,
+    ) -> Result<(), CodegenError> {
+        Ok(())
+    }
+
+    fn visit_const_declaration(
+        &mut self,
+        decl: &(String, Box<Expr>),
     ) -> Result<(), CodegenError> {
         Ok(())
     }
 
     fn visit_decl_section(&mut self, section: &DeclSection) -> Result<(), CodegenError> {
         match section {
+            DeclSection::Label(label_decl) => {
+                for decl in label_decl.iter() {
+                    self.visit_label_declaration(decl)?;
+                }
+                Ok(())
+            },
+            DeclSection::Const(const_decl) => {
+                for decl in const_decl.iter() {
+                    self.visit_const_declaration(decl)?;
+                }
+                Ok(())
+            },
             DeclSection::Type(type_decl) => {
-                self.visit_type_declaration(type_decl)?;
+                for decl in type_decl.iter() {
+                    self.visit_type_declaration(decl)?;
+                }
                 Ok(())
             },
             DeclSection::Variable(var_decl) => {
