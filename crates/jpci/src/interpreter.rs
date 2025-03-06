@@ -442,28 +442,7 @@ impl Interpreter {
         self.visit_statement(&block.body)
     }
 
-    fn visit_program(&mut self, program: &Box<Program>) -> Result<(), InterpreterError> {
+    pub fn visit_program(&mut self, program: &Box<Program>) -> Result<(), InterpreterError> {
         self.visit_block(&program.block)
-    }
-
-    pub fn eval(&mut self, exp: &str) {
-        let mb_tokens = Lexer::new(exp.chars()).collect::<Vec<_>>();
-        let tokens = mb_tokens.into_iter().collect::<Result<Vec<_>, _>>()
-            .map_err(|error| Error::Lexer { 
-                path: Utf8PathBuf::from(exp),
-                src: exp.to_string(),
-                error,
-             }).unwrap();
-        fs::write("tokens.txt", format!("{:#?}", &tokens)).unwrap();
-
-        let mut parser = Parser::new(tokens.into_iter());
-        let ast = parser.parse().map_err(|err| Error::Parser {
-            path: Utf8PathBuf::from(exp),
-            src: exp.to_string(),
-            error: err,
-        }).unwrap();
-        fs::write("ast.txt", format!("{:#?}", &ast)).unwrap();
-
-        self.visit_program(&Box::new(ast)).unwrap()
     }
 }

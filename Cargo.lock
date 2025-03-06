@@ -429,6 +429,7 @@ name = "jpci"
 version = "0.0.1"
 dependencies = [
  "camino",
+ "clap",
  "core",
  "rpds",
  "thiserror",

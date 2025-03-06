@@ -761,6 +761,8 @@ where
                 self.advance();
                 let statement = self.statement()?;
                 statements.push(Box::new(statement));
+            } else {
+                break;
             }
         }
         return Ok(statements);

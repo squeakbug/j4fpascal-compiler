@@ -10,3 +10,4 @@ core = { workspace = true }
 rpds = { workspace = true }
 thiserror = { workspace = true }
 camino = { workspace = true }
+clap = { workspace = true }
