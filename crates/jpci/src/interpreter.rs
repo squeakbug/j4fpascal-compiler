@@ -2,7 +2,7 @@ use std::{collections::HashMap, fmt::{self, Debug}, fs};
 
 use core::{
     ast::{
-        Block, DeclSection, DesignatorItem, Expr, ProcedureDeclaration, 
+        Block, DeclSection, Designator, DesignatorItem, Expr, ProcedureDeclaration, 
         Program, Stmt, TypeDeclaration, UnlabeledStmt, VarDeclaration,
     }, error::{self, Error}, lexer::{self, Lexer}, parser::Parser,
 };
@@ -10,8 +10,9 @@ use core::{
 use camino::Utf8PathBuf;
 
 use crate::callable::{
+    Arity,
     Callable, NativeProcedureValue, ProcedureValue, ReadProcedureValue,
-    ReadlnProcedureValue, WriteProcedureValue, WritelnProcedureValue
+    ReadlnProcedureValue, WriteProcedureValue, WritelnProcedureValue,
 };
 
 #[derive(Debug, Clone)]
@@ -34,6 +35,8 @@ pub enum Value {
     String(String),
     Boolean(bool),
     Procedure(ProcedureValue),
+    // TODO: When classes arive, change to some reference type
+    Ref(Designator),
     Null,
 }
 
@@ -45,6 +48,7 @@ impl fmt::Display for Value {
             Value::String(s) => write!(f, "\"{:?}\"", s),
             Value::Boolean(b) => write!(f, "{:?}", b),
             Value::Procedure(p) => write!(f, "{:?}", p),
+            Value::Ref(d) => write!(f, "{:?}", d),
             Value::Null => write!(f, "null"),
         }
     }
@@ -244,18 +248,29 @@ impl Interpreter {
                 );
                 match designator.items.first() {
                     Some(&DesignatorItem::Call { ref arguments }) => {
-                        if arguments.len() != proc.arity() {
-                            return Err(InterpreterError::MismathedArgumentsCount);
+                        if let Arity::Static(arity) = proc.arity() {
+                            if arity != arguments.len() {
+                                return Err(InterpreterError::MismathedArgumentsCount);
+                            }
                         }
-                        let values: Result<Vec<_>, _> = arguments.iter()
-                            .map(|arg| self.visit_expr(&arg.0))
+                        let values: Result<Vec<Value>, _> = arguments.iter()
+                            .map(|arg| match *arg.0 {
+                                // Call-by-reference
+                                // TODO: check if formal parameter has 'var' modifier
+                                Expr::Designator { ref designator } => Ok(Value::Ref(designator.clone())),
+                                // Call-by-value
+                                // TODO: wtf boxing???
+                                ref expr => self.visit_expr(&Box::new(expr.clone())),
+                            })
                             .collect();
                         proc.call(self, values?)?;
                         Ok(())
                     },
                     None => {
-                        if proc.arity() != 0 {
-                            return Err(InterpreterError::MismathedArgumentsCount);
+                        if let Arity::Static(arity) = proc.arity() {
+                            if arity != 0 {
+                                return Err(InterpreterError::MismathedArgumentsCount);
+                            }
                         }
                         proc.call(self, vec![])?;
                         Ok(())
@@ -312,7 +327,9 @@ impl Interpreter {
                 loop {
                     match self.visit_expr(condition)? {
                         Value::Boolean(false) => break,
-                        Value::Boolean(true) => self.visit_statement(statement)?,
+                        Value::Boolean(true) => { 
+                            self.visit_statement(statement)?
+                        },
                         _ => return Err(InterpreterError::MismatchedTypes),
                     }
                 }
@@ -365,6 +382,22 @@ impl Interpreter {
             Expr::Binary { left, operator, right } => {
                 let left = self.visit_expr(left)?;
                 let right = self.visit_expr(right)?;
+                if operator.kind == lexer::TokenType::Or {
+                    return match (left, right) {
+                        (Value::Boolean(a), Value::Boolean(b)) => {
+                            Ok(Value::Boolean(a | b))
+                        },
+                        _ => Err(InterpreterError::NotImplemented),
+                    }
+                }
+                if operator.kind == lexer::TokenType::And {
+                    return match (left, right) {
+                        (Value::Boolean(a), Value::Boolean(b)) => {
+                            Ok(Value::Boolean(a & b))
+                        },
+                        _ => Err(InterpreterError::NotImplemented),
+                    }
+                }
                 match (left, right) {
                     (Value::UnsignedInteger(a), Value::UnsignedInteger(b)) => {
                         match operator.kind {
@@ -372,6 +405,12 @@ impl Interpreter {
                             lexer::TokenType::Minus => Ok(Value::UnsignedInteger(a - b)),
                             lexer::TokenType::Star => Ok(Value::UnsignedInteger(a * b)),
                             lexer::TokenType::Slash => Ok(Value::UnsignedInteger(a / b)),
+                            lexer::TokenType::Greater => Ok(Value::Boolean(a > b)),
+                            lexer::TokenType::GreaterEqual => Ok(Value::Boolean(a >= b)),
+                            lexer::TokenType::Less => Ok(Value::Boolean(a < b)),
+                            lexer::TokenType::LessEqual => Ok(Value::Boolean(a <= b)),
+                            lexer::TokenType::Equal => Ok(Value::Boolean(a == b)),
+                            lexer::TokenType::NotEqual => Ok(Value::Boolean(a != b)),
                             _ => Err(InterpreterError::NotImplemented),
                         }
                     },

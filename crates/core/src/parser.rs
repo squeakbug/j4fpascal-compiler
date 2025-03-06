@@ -3,6 +3,7 @@ use crate::{
         Block, CaseItem, CaseLabel, DeclSection, Designator, DesignatorItem, Expr,
         ProcedureDeclaration, ProcedureHeadDeclaration, Program, Stmt,
         TypeDeclaration, UnlabeledStmt, VarDeclaration, TypeDecl,
+        ParamModifier, Param,
     },
     lexer::{SrcSpan, Token, TokenType},
 };
@@ -451,24 +452,36 @@ where
         }
     }
 
+    fn parameter_modifier(&mut self) -> Option<ParamModifier> {
+        match self.peek() {
+            Some(Token { kind: TokenType::Const, .. }) => Some(ParamModifier::Const),
+            Some(Token { kind: TokenType::Var, .. }) => Some(ParamModifier::Var),
+            Some(Token { kind: TokenType::Out, .. }) => Some(ParamModifier::Out),
+            Some(other) => None,
+            None => None,
+        }
+    }
+
     fn formal_parameter(
         &mut self
-    ) -> Result<Option<(String, Option<TypeDecl>, Option<Box<Expr>>)>, ParserError> {
-        if let Some(parameter) = self.identifier() {
-            let type_decl = self.type_decl()?;
-            if let Some(token@Token { kind: TokenType::Assignment, .. }) = self.peek() {
+    ) -> Result<Option<Param>, ParserError> {
+        let modifier = self.parameter_modifier();
+        if let Some(ident) = self.identifier() {
+            let mut param = Param {
+                modifier,
+                ident,
+                type_decl: None,
+                init_value: None,
+            };
+            if let Some(token@Token { kind: TokenType::Colon, .. }) = self.peek() {
                 self.advance();
-                if let Some(default_val) = self.expression()? {
-                    Ok(Some((parameter, type_decl, Some(Box::new(default_val)))))
-                } else {
-                    Err(parser_error(
-                        ParserErrorType::ExpectedExpression,
-                        SrcSpan { start: token.start_pos, end: token.end_pos }
-                    ))
-                }
-            } else {
-                Ok(Some((parameter, type_decl, None)))
+                param.type_decl = Some(self.expected_type_decl(&token)?);
             }
+            if let Some(token@Token { kind: TokenType::Equal, .. }) = self.peek() {
+                self.advance();
+                param.init_value = Some(Box::new(self.expected_expression(&token)?));
+            }
+            Ok(Some(param))
         } else {
             Ok(None)
         }
@@ -476,7 +489,7 @@ where
 
     fn formal_parameter_list(
         &mut self
-    ) -> Result<Vec<(String, Option<TypeDecl>, Option<Box<Expr>>)>, ParserError> {
+    ) -> Result<Vec<Param>, ParserError> {
         let mut parameters = vec![];
         if let Some(parameter) = self.formal_parameter()? {
             parameters.push(parameter);
@@ -509,7 +522,6 @@ where
         mut head: ProcedureHeadDeclaration, 
         prev_tok: &Token
     ) -> Result<Option<ProcedureHeadDeclaration>, ParserError> {
-        let mut return_type: Option<TypeDecl> = None;
         if let Some(ref colon_tok @ Token { kind: TokenType::Colon, .. }) = self.peek() {
             self.advance();
             head.return_type = Some(self.expected_type_decl(&colon_tok)?);
@@ -558,6 +570,7 @@ where
     fn proc_decl_section(&mut self) -> Result<Option<ProcedureDeclaration>, ParserError> {
         if let Some(head) = self.proc_decl_heading()? {
             if let Some(body) = self.compound_statement()? {
+                self.consume(TokenType::Semicolon, SrcSpan { start: 0, end: 0 })?;
                 Ok(Some(ProcedureDeclaration {
                     head,
                     body: Box::new(Stmt {

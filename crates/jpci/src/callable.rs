@@ -2,13 +2,18 @@ use core::ast::ProcedureDeclaration;
 
 use crate::interpreter::{Interpreter, InterpreterError, Value};
 
+pub enum Arity {
+    Static(usize),
+    Var,
+}
+
 pub trait Callable {
     fn call(
         &mut self,
         executor: &mut Interpreter, 
         args: Vec<Value>
     ) -> Result<(), InterpreterError>;
-    fn arity(&self) -> usize;
+    fn arity(&self) -> Arity;
 }
 
 #[derive(Debug, Clone)]
@@ -36,7 +41,7 @@ impl Callable for WriteProcedureValue {
         Ok(())
     }
 
-    fn arity(&self) -> usize { 1 }
+    fn arity(&self) -> Arity { Arity::Var }
 }
 
 #[derive(Debug, Clone)]
@@ -59,7 +64,7 @@ impl Callable for WritelnProcedureValue {
         Ok(())
     }
 
-    fn arity(&self) -> usize { 1 }
+    fn arity(&self) -> Arity { Arity::Var }
 }
 
 
@@ -69,13 +74,36 @@ pub struct ReadProcedureValue;
 impl Callable for ReadProcedureValue {
     fn call(
         &mut self,
-        _executor: &mut Interpreter, 
-        _args: Vec<Value>
+        executor: &mut Interpreter, 
+        args: Vec<Value>
     ) -> Result<(), InterpreterError> {
+        let mut buffer = String::new();
+        for arg in args.into_iter() {
+            match arg {
+                Value::Ref(designator) => {
+                    std::io::stdin().read_line(&mut buffer).unwrap();
+                    // TODO: Handle arrays, class fields, etc..
+                    match executor.environment.get_value(&designator.name) {
+                        Some(Value::UnsignedInteger(_)) => {
+                            match buffer.trim().parse::<i64>() {
+                                Ok(num) => {
+                                    let val = Value::UnsignedInteger(num);
+                                    executor.environment.assign(&designator.name, val).unwrap();
+                                },
+                                Err(_) => panic!("Failed to parse"),
+                            }
+                        },
+                        Some(_) => panic!("Not implemented"),
+                        None => panic!("No such variable"),
+                    }
+                },
+                _ => panic!("Read accept only call-by-reference parameters"),
+            }
+        }
         Ok(())
     }
 
-    fn arity(&self) -> usize { 0 }
+    fn arity(&self) -> Arity { Arity::Static(1) }
 }
 
 #[derive(Debug, Clone)]
@@ -90,7 +118,7 @@ impl Callable for ReadlnProcedureValue {
         Ok(())
     }
 
-    fn arity(&self) -> usize { 0 }
+    fn arity(&self) -> Arity { Arity::Static(1) }
 }
 
 impl Callable for NativeProcedureValue {
@@ -103,14 +131,14 @@ impl Callable for NativeProcedureValue {
         let def = &self.decl;
         let head = &def.head;
         for (param, value) in head.params.iter().zip(args.into_iter()) {
-            executor.environment.define(&param.0, value)?;
+            executor.environment.define(&param.ident, value)?;
         }
         executor.visit_statement(&def.body)?;
         executor.scope_exit()?;
         Ok(())
     }
 
-    fn arity(&self) -> usize { self.decl.head.params.len() }
+    fn arity(&self) -> Arity { Arity::Static(self.decl.head.params.len()) }
 }
 
 #[derive(Debug, Clone)]
@@ -123,7 +151,7 @@ pub enum ProcedureValue {
 }
 
 impl Callable for ProcedureValue {
-    fn arity(&self) -> usize {
+    fn arity(&self) -> Arity {
         match self {
             ProcedureValue::Native(ref value) => value.arity(),
             ProcedureValue::Write(ref value) => value.arity(),

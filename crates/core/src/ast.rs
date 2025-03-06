@@ -157,9 +157,24 @@ pub struct VarDeclaration {
 }
 
 #[derive(Debug, Clone)]
+pub enum ParamModifier {
+    Const,
+    Var,
+    Out,
+}
+
+#[derive(Debug, Clone)]
+pub struct Param {
+    pub modifier: Option<ParamModifier>,
+    pub ident: String, 
+    pub type_decl: Option<TypeDecl>,
+    pub init_value: Option<Box<Expr>>
+}
+
+#[derive(Debug, Clone)]
 pub struct ProcedureHeadDeclaration {
     pub name: String,
-    pub params: Vec<(String, Option<TypeDecl>, Option<Box<Expr>>)>,
+    pub params: Vec<Param>,
     pub return_type: Option<TypeDecl>,
 }
 
