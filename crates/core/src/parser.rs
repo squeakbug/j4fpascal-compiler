@@ -397,8 +397,38 @@ where
         Ok(None)
     }
 
+    fn type_declaration(&mut self) -> Result<Option<TypeDeclaration>, ParserError> {
+        if let Some(ident) = self.identifier() {
+            let tok = self.consume(TokenType::Equal, SrcSpan { start: 0, end: 0 })?;
+            let decl = self.expected_type_decl(&tok)?;
+            self.consume(TokenType::Semicolon, SrcSpan { start: 0, end: 0 })?;
+            Ok(Some(TypeDeclaration { decl, ident }))
+        } else {
+            Ok(None)
+        }
+    }
+
     fn type_decl_section(&mut self) -> Result<Option<Vec<TypeDeclaration>>, ParserError> {
-        Ok(None)
+        match self.peek() {
+            Some(
+                ref token @ Token {
+                    kind: TokenType::Type,
+                    ..
+                },
+            ) => {
+                self.advance();
+                if let Some(type_declaration) = self.type_declaration()? {
+                    let mut type_declarations = vec![type_declaration];
+                    while let Some(type_declaration) = self.type_declaration()? {
+                        type_declarations.push(type_declaration);
+                    }
+                    Ok(Some(type_declarations))
+                } else {
+                    Ok(None)
+                }
+            }
+            _ => Ok(None),
+        }
     }
 
     fn array_type_decl(&mut self) -> Result<Option<TypeDecl>, ParserError> {
@@ -414,42 +444,140 @@ where
         }
     }
 
+    fn class_type_type_decl(&mut self) -> Result<Option<TypeDecl>, ParserError> {
+        if let Some(Token {
+            kind: TokenType::Class,
+            ..
+        }) = self.peek()
+        {
+            self.advance();
+            Ok(None)
+        } else {
+            Ok(None)
+        }
+    }
+
     fn class_type_decl(&mut self) -> Result<Option<TypeDecl>, ParserError> {
+        if let Some(Token {
+            kind: TokenType::Class,
+            ..
+        }) = self.peek()
+        {
+            self.advance();
+            Ok(None)
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn class_helper_decl(&mut self) -> Result<Option<TypeDecl>, ParserError> {
+        if let Some(Token {
+            kind: TokenType::Class,
+            ..
+        }) = self.peek()
+        {
+            self.advance();
+            Ok(None)
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn interface_type_decl(&mut self) -> Result<Option<TypeDecl>, ParserError> {
+        if let Some(Token {
+            kind: TokenType::Interface,
+            ..
+        }) = self.peek()
+        {
+            self.advance();
+            Ok(None)
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn object_decl(&mut self) -> Result<Option<TypeDecl>, ParserError> {
+        if let Some(Token {
+            kind: TokenType::Interface,
+            ..
+        }) = self.peek()
+        {
+            self.advance();
+            Ok(None)
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn record_field(&mut self) -> Result<Option<Vec<(String, Box<TypeDecl>)>>, ParserError> {
+        let identities = self.ident_list()?;
+        if identities.len() == 0 {
+            Ok(None)
+        } else {
+            let colon_tok = self.consume(TokenType::Colon, SrcSpan { start: 0, end: 0 })?;
+            let type_decl = self.expected_type_decl(&colon_tok)?;
+            let identities = identities
+                .into_iter()
+                .map(|ident| (ident, Box::new(type_decl.clone())))
+                .collect::<Vec<_>>();
+            self.consume(TokenType::Semicolon, colon_tok.as_ref().into())?;
+            Ok(Some(identities))
+        }
+    }
+
+    fn record_decl(&mut self) -> Result<Option<TypeDecl>, ParserError> {
         match self.peek() {
-            Some(Token {
-                kind: TokenType::Record,
-                ..
-            }) => {
+            Some(
+                record_tok @ Token {
+                    kind: TokenType::Record,
+                    ..
+                },
+            ) => {
                 self.advance();
-                Ok(None)
-            }
-            Some(Token {
-                kind: TokenType::Class,
-                ..
-            }) => {
-                self.advance();
-                Ok(None)
-            }
-            Some(Token {
-                kind: TokenType::Interface,
-                ..
-            }) => {
-                self.advance();
-                Ok(None)
-            }
-            Some(Token {
-                kind: TokenType::Object,
-                ..
-            }) => {
-                self.advance();
-                Ok(None)
+                let mut fields = vec![];
+                while let Some(record) = self.record_field()? {
+                    for field in record.into_iter() {
+                        fields.push(field);
+                    }
+                }
+                self.consume(TokenType::End, record_tok.as_ref().into());
+                Ok(Some(TypeDecl::RecordType { fields }))
             }
             _ => Ok(None),
         }
     }
 
-    fn record_type_decl(&mut self) -> Result<Option<TypeDecl>, ParserError> {
-        Ok(None)
+    fn record_helper_decl(&mut self) -> Result<Option<TypeDecl>, ParserError> {
+        if let Some(Token {
+            kind: TokenType::Interface,
+            ..
+        }) = self.peek()
+        {
+            self.advance();
+            Ok(None)
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn class_decl(&mut self) -> Result<Option<TypeDecl>, ParserError> {
+        if let Some(rec_decl) = self.class_type_type_decl()? {
+            Ok(Some(rec_decl))
+        } else if let Some(rec_decl) = self.class_type_decl()? {
+            Ok(Some(rec_decl))
+        } else if let Some(rec_decl) = self.class_helper_decl()? {
+            Ok(Some(rec_decl))
+        } else if let Some(rec_decl) = self.interface_type_decl()? {
+            Ok(Some(rec_decl))
+        } else if let Some(rec_decl) = self.object_decl()? {
+            Ok(Some(rec_decl))
+        } else if let Some(rec_decl) = self.record_decl()? {
+            Ok(Some(rec_decl))
+        } else if let Some(rec_decl) = self.record_helper_decl()? {
+            Ok(Some(rec_decl))
+        } else {
+            Ok(None)
+        }
     }
 
     fn set_type_decl(&mut self) -> Result<Option<TypeDecl>, ParserError> {
@@ -506,9 +634,7 @@ where
     fn type_decl(&mut self) -> Result<Option<TypeDecl>, ParserError> {
         if let Some(arr_decl) = self.array_type_decl()? {
             Ok(Some(arr_decl))
-        } else if let Some(set_decl) = self.class_type_decl()? {
-            Ok(Some(set_decl))
-        } else if let Some(set_decl) = self.record_type_decl()? {
+        } else if let Some(set_decl) = self.class_decl()? {
             Ok(Some(set_decl))
         } else if let Some(set_decl) = self.set_type_decl()? {
             Ok(Some(set_decl))
@@ -1109,8 +1235,20 @@ where
         Ok(None)
     }
 
+    fn ident_list(&mut self) -> Result<Vec<String>, ParserError> {
+        let mut identities = vec![];
+        while let Some(ident) = self.identifier() {
+            identities.push(ident)
+        }
+        Ok(identities)
+    }
+
     fn expression_list(&mut self) -> Result<Vec<Box<Expr>>, ParserError> {
-        todo!();
+        let mut exprs = vec![];
+        while let Some(expr) = self.expression()? {
+            exprs.push(Box::new(expr))
+        }
+        Ok(exprs)
     }
 
     // Как же это убого выглядит

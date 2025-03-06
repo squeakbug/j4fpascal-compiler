@@ -43,6 +43,7 @@ pub enum Value {
     Procedure(ProcedureValue),
     // TODO: When classes arive, change to some reference type
     Ref(Designator),
+    Record(HashMap<String, Value>),
     Null,
 }
 
@@ -55,6 +56,7 @@ impl fmt::Display for Value {
             Value::Boolean(b) => write!(f, "{:?}", b),
             Value::Procedure(p) => write!(f, "{:?}", p),
             Value::Ref(d) => write!(f, "{:?}", d),
+            Value::Record(r) => write!(f, "{:?}", r),
             Value::Null => write!(f, "null"),
         }
     }
@@ -173,7 +175,7 @@ impl Interpreter {
         Ok(())
     }
 
-    fn visit_type_declaration(&mut self, _decl: &TypeDeclaration) -> Result<(), InterpreterError> {
+    fn visit_type_declaration(&mut self, decl: &TypeDeclaration) -> Result<(), InterpreterError> {
         todo!()
     }
 
