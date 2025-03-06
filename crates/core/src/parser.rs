@@ -17,6 +17,7 @@ pub enum ParserErrorType {
     ExpectedFactor,
     ExpectedLeftParen,
     ExpectedToken { tok: TokenType },
+    UnexpectedToken { tok: TokenType },
     ExpectedFormalParameter,
     ExpectedActualParameter,
     ExpectedUnlabeledStmt,
@@ -41,6 +42,7 @@ impl ParserError {
             ParserErrorType::ExpectedExpression => ("Expected expression".into(), vec![]),
             ParserErrorType::ExpectedLeftParen => ("Expected '('".into(), vec![]),
             ParserErrorType::ExpectedToken { tok } => (format!("Expected '{:#?}'", tok), vec![]),
+            ParserErrorType::UnexpectedToken { tok } => (format!("Unexpected '{:#?}'", tok), vec![]),
             ParserErrorType::ExpectedFormalParameter => ("Expected formal parameter".into(), vec![]),
             ParserErrorType::ExpectedActualParameter => ("Expected actual parameter".into(), vec![]),
             ParserErrorType::ExpectedUnlabeledStmt => ("Expected unlabeled statement".into(), vec![]),
@@ -502,24 +504,52 @@ where
         }
     }
 
+    fn add_proc_head_decl(
+        &mut self, 
+        mut head: ProcedureHeadDeclaration, 
+        prev_tok: &Token
+    ) -> Result<Option<ProcedureHeadDeclaration>, ParserError> {
+        let mut return_type: Option<TypeDecl> = None;
+        if let Some(ref colon_tok @ Token { kind: TokenType::Colon, .. }) = self.peek() {
+            self.advance();
+            head.return_type = Some(self.expected_type_decl(&colon_tok)?);
+        }
+        self.consume(TokenType::Semicolon, prev_tok.as_ref().into())?;
+        Ok(Some(head))
+    }
+
     fn proc_decl_heading(&mut self) -> Result<Option<ProcedureHeadDeclaration>, ParserError> {
         if let Some(proc_token@Token { kind: TokenType::Procedure, .. }) = self.peek() {
             self.advance();
             let (ident_token, name) = self.expected_identifier(&proc_token)?;
-            self.consume(TokenType::LeftParen, ident_token.as_ref().into())?;
-            let params = self.formal_parameter_list()?;
-            self.consume(TokenType::RightParen, ident_token.as_ref().into())?;
-            let mut return_type = None;
-            if let Some(ref colon_tok @ Token { kind: TokenType::Colon, .. }) = self.peek() {
-                self.advance();
-                return_type = Some(self.expected_type_decl(&colon_tok)?);
-            }
-            self.consume(TokenType::Semicolon, ident_token.as_ref().into())?;
-            Ok(Some(ProcedureHeadDeclaration {
+
+            let mut head_declaration = ProcedureHeadDeclaration {
                 name,
-                params,
-                return_type,
-            }))
+                params: vec![],
+                return_type: None,
+            };
+            match self.peek() {
+                Some(Token{ kind: TokenType::LeftParen, .. }) => {
+                    head_declaration.params = self.formal_parameter_list()?;
+                    self.consume(TokenType::RightParen, ident_token.as_ref().into())?;
+                    self.add_proc_head_decl(head_declaration, &ident_token)
+                },
+                Some(Token{ kind: TokenType::Colon, .. }) => {
+                    self.add_proc_head_decl(head_declaration, &ident_token)
+                },
+                Some(tok) => {
+                    Err(parser_error(
+                        ParserErrorType::UnexpectedToken { tok: tok.kind },
+                        SrcSpan { start: 0, end: 0 }
+                    ))
+                },
+                None => {
+                    Err(parser_error(
+                        ParserErrorType::UnexpectedEof,
+                        SrcSpan { start: 0, end: 0 }
+                    ))
+                }
+            }
         } else {
             Ok(None)
         }
