@@ -10,8 +10,8 @@ pub enum Arity {
 pub trait Callable {
     fn call(
         &mut self,
-        executor: &mut Interpreter, 
-        args: Vec<Value>
+        executor: &mut Interpreter,
+        args: Vec<Value>,
     ) -> Result<(), InterpreterError>;
     fn arity(&self) -> Arity;
 }
@@ -26,9 +26,9 @@ pub struct WriteProcedureValue;
 
 impl Callable for WriteProcedureValue {
     fn call(
-        &mut self, 
-        _executor: &mut Interpreter, 
-        args: Vec<Value>
+        &mut self,
+        _executor: &mut Interpreter,
+        args: Vec<Value>,
     ) -> Result<(), InterpreterError> {
         let mut result = String::new();
         for arg in args {
@@ -41,7 +41,9 @@ impl Callable for WriteProcedureValue {
         Ok(())
     }
 
-    fn arity(&self) -> Arity { Arity::Var }
+    fn arity(&self) -> Arity {
+        Arity::Var
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -49,9 +51,9 @@ pub struct WritelnProcedureValue;
 
 impl Callable for WritelnProcedureValue {
     fn call(
-        &mut self, 
-        _executor: &mut Interpreter, 
-        args: Vec<Value>
+        &mut self,
+        _executor: &mut Interpreter,
+        args: Vec<Value>,
     ) -> Result<(), InterpreterError> {
         let mut result = String::new();
         for arg in args {
@@ -64,9 +66,10 @@ impl Callable for WritelnProcedureValue {
         Ok(())
     }
 
-    fn arity(&self) -> Arity { Arity::Var }
+    fn arity(&self) -> Arity {
+        Arity::Var
+    }
 }
-
 
 #[derive(Debug, Clone)]
 pub struct ReadProcedureValue;
@@ -74,8 +77,8 @@ pub struct ReadProcedureValue;
 impl Callable for ReadProcedureValue {
     fn call(
         &mut self,
-        executor: &mut Interpreter, 
-        args: Vec<Value>
+        executor: &mut Interpreter,
+        args: Vec<Value>,
     ) -> Result<(), InterpreterError> {
         let mut buffer = String::new();
         for arg in args.into_iter() {
@@ -84,26 +87,26 @@ impl Callable for ReadProcedureValue {
                     std::io::stdin().read_line(&mut buffer).unwrap();
                     // TODO: Handle arrays, class fields, etc..
                     match executor.environment.get_value(&designator.name) {
-                        Some(Value::UnsignedInteger(_)) => {
-                            match buffer.trim().parse::<i64>() {
-                                Ok(num) => {
-                                    let val = Value::UnsignedInteger(num);
-                                    executor.environment.assign(&designator.name, val).unwrap();
-                                },
-                                Err(_) => panic!("Failed to parse"),
+                        Some(Value::UnsignedInteger(_)) => match buffer.trim().parse::<i64>() {
+                            Ok(num) => {
+                                let val = Value::UnsignedInteger(num);
+                                executor.environment.assign(&designator.name, val).unwrap();
                             }
+                            Err(_) => panic!("Failed to parse"),
                         },
                         Some(_) => panic!("Not implemented"),
                         None => panic!("No such variable"),
                     }
-                },
+                }
                 _ => panic!("Read accept only call-by-reference parameters"),
             }
         }
         Ok(())
     }
 
-    fn arity(&self) -> Arity { Arity::Static(1) }
+    fn arity(&self) -> Arity {
+        Arity::Static(1)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -112,20 +115,22 @@ pub struct ReadlnProcedureValue;
 impl Callable for ReadlnProcedureValue {
     fn call(
         &mut self,
-        _executor: &mut Interpreter, 
-        _args: Vec<Value>
+        _executor: &mut Interpreter,
+        _args: Vec<Value>,
     ) -> Result<(), InterpreterError> {
         Ok(())
     }
 
-    fn arity(&self) -> Arity { Arity::Static(1) }
+    fn arity(&self) -> Arity {
+        Arity::Static(1)
+    }
 }
 
 impl Callable for NativeProcedureValue {
     fn call(
-        &mut self, 
-        executor: &mut Interpreter, 
-        args: Vec<Value>
+        &mut self,
+        executor: &mut Interpreter,
+        args: Vec<Value>,
     ) -> Result<(), InterpreterError> {
         executor.scope_enter()?;
         let def = &self.decl;
@@ -138,7 +143,9 @@ impl Callable for NativeProcedureValue {
         Ok(())
     }
 
-    fn arity(&self) -> Arity { Arity::Static(self.decl.head.params.len()) }
+    fn arity(&self) -> Arity {
+        Arity::Static(self.decl.head.params.len())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -163,9 +170,9 @@ impl Callable for ProcedureValue {
 
     fn call(
         &mut self,
-        executor: &mut Interpreter, 
-        args: Vec<Value>
-    ) -> Result<(), InterpreterError> { 
+        executor: &mut Interpreter,
+        args: Vec<Value>,
+    ) -> Result<(), InterpreterError> {
         match self {
             ProcedureValue::Native(ref mut value) => value.call(executor, args),
             ProcedureValue::Write(ref mut value) => value.call(executor, args),

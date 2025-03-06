@@ -1,9 +1,13 @@
-use std::{collections::HashMap, fs, fmt, io::{BufWriter, Write}};
+use std::{
+    collections::HashMap,
+    fmt, fs,
+    io::{BufWriter, Write},
+};
 
 use core::{
     ast::{
-        Block, DeclSection, DesignatorItem, Expr, ProcedureDeclaration, 
-        Program, Stmt, TypeDeclaration, UnlabeledStmt, VarDeclaration,
+        Block, DeclSection, DesignatorItem, Expr, ProcedureDeclaration, Program, Stmt,
+        TypeDeclaration, UnlabeledStmt, VarDeclaration,
     },
     lexer::{self, Lexer},
     parser::{Parser, ParserError},
@@ -84,7 +88,7 @@ pub enum Instruction {
     Xor { dst: Var, src1: Var, src2: Var },
 
     // Debug
-    
+
     // Other operators
     Icmp,
     Phi,
@@ -119,98 +123,134 @@ impl CodeEmmiter {
 
     fn add_var(&mut self, type_: Type) -> Var {
         self.number += 1;
-        Var { number: self.number, use_count: 0, type_ }
+        Var {
+            number: self.number,
+            use_count: 0,
+            type_,
+        }
     }
 
     fn visit_expr(&mut self, expr: &Box<Expr>) -> Result<Var, CodegenError> {
         match expr.as_ref() {
-            Expr::Binary { left, operator, right } => {
+            Expr::Binary {
+                left,
+                operator,
+                right,
+            } => {
                 let src1 = self.visit_expr(left)?;
                 let src2 = self.visit_expr(right)?;
                 let dst = self.add_var(src1.type_.clone());
                 let inst = match operator.kind {
-                    lexer::TokenType::Plus => Ok(Instruction::Add { dst: dst.clone(), src1, src2 }),
-                    lexer::TokenType::Minus => Ok(Instruction::Sub { dst: dst.clone(), src1, src2 }),
-                    lexer::TokenType::Star => Ok(Instruction::Mul { dst: dst.clone(), src1, src2 }),
-                    lexer::TokenType::Slash => Ok(Instruction::Div { dst: dst.clone(), src1, src2 }),
+                    lexer::TokenType::Plus => Ok(Instruction::Add {
+                        dst: dst.clone(),
+                        src1,
+                        src2,
+                    }),
+                    lexer::TokenType::Minus => Ok(Instruction::Sub {
+                        dst: dst.clone(),
+                        src1,
+                        src2,
+                    }),
+                    lexer::TokenType::Star => Ok(Instruction::Mul {
+                        dst: dst.clone(),
+                        src1,
+                        src2,
+                    }),
+                    lexer::TokenType::Slash => Ok(Instruction::Div {
+                        dst: dst.clone(),
+                        src1,
+                        src2,
+                    }),
                     _ => Err(CodegenError::NotImplemented),
                 }?;
                 self.instructions.push(inst);
                 Ok(dst)
-            },
+            }
             Expr::Unary { operator, right } => {
                 let src = self.visit_expr(right)?;
                 match operator.kind {
                     lexer::TokenType::Minus => {
                         let dst = self.add_var(src.type_.clone());
-                        let inst = Instruction::Negate { dst: dst.clone(), src };
+                        let inst = Instruction::Negate {
+                            dst: dst.clone(),
+                            src,
+                        };
                         self.instructions.push(inst);
                         Ok(dst)
-                    },
+                    }
                     _ => Err(CodegenError::NotImplemented),
                 }
-            },
-            Expr::Literal { value } => {
-                match value.kind {
-                    lexer::TokenType::UnsignedInteger(ref num) => {
-                        match num.parse::<i64>() {
-                            Ok(num) => {
-                                let dst = self.add_var(Type::Integer);
-                                let num = self.add_const(Constant::Integer(num));
-                                let inst = Instruction::LoadConst { 
-                                    dst: dst.clone(), 
-                                    num
-                                };
-                                self.instructions.push(inst);
-                                Ok(dst)
-                            },
-                            Err(_) => Err(CodegenError::NotImplemented),
-                        }
-                    },
-                    lexer::TokenType::UnsignedReal(ref num) => {
-                        match num.parse::<f64>() {
-                            Ok(num) => {
-                                let dst = self.add_var(Type::Integer);
-                                let num = self.add_const(Constant::Real(num));
-                                let inst = Instruction::LoadConst { dst: dst.clone(), num };
-                                self.instructions.push(inst);
-                                Ok(dst)
-                            },
-                            Err(_) => Err(CodegenError::NotImplemented),
-                        }
-                    },
-                    lexer::TokenType::True => {
+            }
+            Expr::Literal { value } => match value.kind {
+                lexer::TokenType::UnsignedInteger(ref num) => match num.parse::<i64>() {
+                    Ok(num) => {
                         let dst = self.add_var(Type::Integer);
-                        let num = self.add_const(Constant::Integer(1));
-                        let inst = Instruction::LoadConst { dst: dst.clone(), num };
+                        let num = self.add_const(Constant::Integer(num));
+                        let inst = Instruction::LoadConst {
+                            dst: dst.clone(),
+                            num,
+                        };
                         self.instructions.push(inst);
                         Ok(dst)
-                    },
-                    lexer::TokenType::False => {
+                    }
+                    Err(_) => Err(CodegenError::NotImplemented),
+                },
+                lexer::TokenType::UnsignedReal(ref num) => match num.parse::<f64>() {
+                    Ok(num) => {
                         let dst = self.add_var(Type::Integer);
-                        let num = self.add_const(Constant::Integer(0));
-                        let inst = Instruction::LoadConst { dst: dst.clone(), num };
+                        let num = self.add_const(Constant::Real(num));
+                        let inst = Instruction::LoadConst {
+                            dst: dst.clone(),
+                            num,
+                        };
                         self.instructions.push(inst);
                         Ok(dst)
-                    },
-                    lexer::TokenType::Nil => {
-                        let dst = self.add_var(Type::Integer);
-                        let num = self.add_const(Constant::Integer(0));
-                        let inst = Instruction::LoadConst { dst: dst.clone(), num };
-                        self.instructions.push(inst);
-                        Ok(dst)
-                    },
-                    lexer::TokenType::StringLiteral(ref val) => {
-                        let dst = self.add_var(Type::String);
-                        let num = self.add_const(Constant::String(val.clone()));
-                        let inst = Instruction::LoadConst { dst: dst.clone(), num };
-                        self.instructions.push(inst);
-                        Ok(dst)
-                    },
-                    _ => Err(CodegenError::NotImplemented),
+                    }
+                    Err(_) => Err(CodegenError::NotImplemented),
+                },
+                lexer::TokenType::True => {
+                    let dst = self.add_var(Type::Integer);
+                    let num = self.add_const(Constant::Integer(1));
+                    let inst = Instruction::LoadConst {
+                        dst: dst.clone(),
+                        num,
+                    };
+                    self.instructions.push(inst);
+                    Ok(dst)
                 }
+                lexer::TokenType::False => {
+                    let dst = self.add_var(Type::Integer);
+                    let num = self.add_const(Constant::Integer(0));
+                    let inst = Instruction::LoadConst {
+                        dst: dst.clone(),
+                        num,
+                    };
+                    self.instructions.push(inst);
+                    Ok(dst)
+                }
+                lexer::TokenType::Nil => {
+                    let dst = self.add_var(Type::Integer);
+                    let num = self.add_const(Constant::Integer(0));
+                    let inst = Instruction::LoadConst {
+                        dst: dst.clone(),
+                        num,
+                    };
+                    self.instructions.push(inst);
+                    Ok(dst)
+                }
+                lexer::TokenType::StringLiteral(ref val) => {
+                    let dst = self.add_var(Type::String);
+                    let num = self.add_const(Constant::String(val.clone()));
+                    let inst = Instruction::LoadConst {
+                        dst: dst.clone(),
+                        num,
+                    };
+                    self.instructions.push(inst);
+                    Ok(dst)
+                }
+                _ => Err(CodegenError::NotImplemented),
             },
-            Expr::Designator { designator } => Err(CodegenError::UndefinedVariable)
+            Expr::Designator { designator } => Err(CodegenError::UndefinedVariable),
         }
     }
 
@@ -229,17 +269,11 @@ impl CodeEmmiter {
         Ok(())
     }
 
-    fn visit_label_declaration(
-        &mut self,
-        decl: &str,
-    ) -> Result<(), CodegenError> {
+    fn visit_label_declaration(&mut self, decl: &str) -> Result<(), CodegenError> {
         Ok(())
     }
 
-    fn visit_const_declaration(
-        &mut self,
-        decl: &(String, Box<Expr>),
-    ) -> Result<(), CodegenError> {
+    fn visit_const_declaration(&mut self, decl: &(String, Box<Expr>)) -> Result<(), CodegenError> {
         Ok(())
     }
 
@@ -250,29 +284,29 @@ impl CodeEmmiter {
                     self.visit_label_declaration(decl)?;
                 }
                 Ok(())
-            },
+            }
             DeclSection::Const(const_decl) => {
                 for decl in const_decl.iter() {
                     self.visit_const_declaration(decl)?;
                 }
                 Ok(())
-            },
+            }
             DeclSection::Type(type_decl) => {
                 for decl in type_decl.iter() {
                     self.visit_type_declaration(decl)?;
                 }
                 Ok(())
-            },
+            }
             DeclSection::Variable(var_decl) => {
                 for decl in var_decl.iter() {
                     self.visit_var_declaration(decl)?;
                 }
                 Ok(())
-            },
+            }
             DeclSection::Procedure(proc_decl) => {
                 self.visit_procedure_declaration(proc_decl)?;
                 Ok(())
-            },
+            }
         }
     }
 
@@ -282,14 +316,14 @@ impl CodeEmmiter {
                 let _ident = &left.name;
                 let _value = self.visit_expr(right)?;
                 Ok(())
-            },
+            }
             UnlabeledStmt::Compound { statements } => {
                 for statement in statements {
                     self.visit_statement(statement)?;
                 }
                 Ok(())
-            },
-            _ => Ok(())
+            }
+            _ => Ok(()),
         }
     }
 
@@ -307,77 +341,85 @@ impl CodeEmmiter {
             // Memory access and adressing operations
             Store { src, dst } => {
                 write!(f, "store {} %{}, %{}", src.type_, src.number, dst.number)
-            },
+            }
             Load { dst, src } => {
-                write!(f, "%{:<4} = load {}, %{}", dst.number, dst.type_, src.number)
-            },
+                write!(
+                    f,
+                    "%{:<4} = load {}, %{}",
+                    dst.number, dst.type_, src.number
+                )
+            }
             LoadConst { dst, num } => {
-                write!(f, "%{:<4} = const {}, {}", dst.number, dst.type_, self.constants[*num])
-            },
+                write!(
+                    f,
+                    "%{:<4} = const {}, {}",
+                    dst.number, dst.type_, self.constants[*num]
+                )
+            }
             // Arithmetic operators
             Add { dst, src1, src2 } => {
                 write!(
-                    f, "%{:<4} = add {} %{}, %{}", 
-                    dst.number, src1.type_, 
-                    src1.number, src2.number
+                    f,
+                    "%{:<4} = add {} %{}, %{}",
+                    dst.number, src1.type_, src1.number, src2.number
                 )
-            },
+            }
             Sub { dst, src1, src2 } => {
                 write!(
-                    f, "%{:<4} = sub {} %{}, %{}", 
-                    dst.number, src1.type_, 
-                    src1.number, src2.number
+                    f,
+                    "%{:<4} = sub {} %{}, %{}",
+                    dst.number, src1.type_, src1.number, src2.number
                 )
-            },
+            }
             Mul { dst, src1, src2 } => {
                 write!(
-                    f, "%{:<4} = mul {} %{}, %{}", 
-                    dst.number, src1.type_, 
-                    src1.number, src2.number
+                    f,
+                    "%{:<4} = mul {} %{}, %{}",
+                    dst.number, src1.type_, src1.number, src2.number
                 )
-            },
+            }
             Div { dst, src1, src2 } => {
                 write!(
-                    f, "{:<4} = div {} %{}, %{}", 
-                    dst.number, src1.type_, 
-                    src1.number, src2.number
+                    f,
+                    "{:<4} = div {} %{}, %{}",
+                    dst.number, src1.type_, src1.number, src2.number
                 )
-            },
+            }
             Rem { dst, src1, src2 } => {
                 write!(
-                    f, "%{:<4} = rem {} %{}, %{}", 
-                    dst.number, src1.type_, 
-                    src1.number, src2.number
+                    f,
+                    "%{:<4} = rem {} %{}, %{}",
+                    dst.number, src1.type_, src1.number, src2.number
                 )
-            },
+            }
             Negate { dst, src } => {
                 write!(f, "%{:<4} = neg %{}", dst.number, src.number)
-            },
+            }
 
             // Logic operators
             And { dst, src1, src2 } => {
                 write!(
-                    f, "%{:<4} = and {} %{}, %{}", 
-                    dst.number, src1.type_, 
-                    src1.number, src2.number
+                    f,
+                    "%{:<4} = and {} %{}, %{}",
+                    dst.number, src1.type_, src1.number, src2.number
                 )
-            },
+            }
             Or { dst, src1, src2 } => {
                 write!(
-                    f, "%{:<4} = or {} %{}, %{}", 
-                    dst.number, src1.type_, 
-                    src1.number, src2.number
+                    f,
+                    "%{:<4} = or {} %{}, %{}",
+                    dst.number, src1.type_, src1.number, src2.number
                 )
-            },
+            }
             Xor { dst, src1, src2 } => {
                 write!(
-                    f, "%{:<4} = xor {} %{}, %{}", 
-                    dst.number, src1.type_, 
-                    src1.number, src2.number
+                    f,
+                    "%{:<4} = xor {} %{}, %{}",
+                    dst.number, src1.type_, src1.number, src2.number
                 )
-            },
+            }
             // Other operators
-            Icmp  => write!(f, "icmp"),
+            Icmp => write!(f, "icmp"),
             Phi => write!(f, "phi"),
         }
     }

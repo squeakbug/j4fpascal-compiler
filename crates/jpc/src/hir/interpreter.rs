@@ -1,6 +1,14 @@
-use std::{collections::HashMap, fmt::{self, Debug}, fs};
+use std::{
+    collections::HashMap,
+    fmt::{self, Debug},
+    fs,
+};
 
-use crate::hir::codegen::{Constant, Module, Instruction::{self, *}};
+use crate::hir::codegen::{
+    Constant,
+    Instruction::{self, *},
+    Module,
+};
 
 #[derive(Debug, Clone)]
 pub enum InterpreterError {
@@ -28,52 +36,24 @@ impl Interpreter {
     pub fn exec(&mut self, inst: Instruction) {
         match inst {
             // Memory access and adressing operations
-            Store { src, dst } => {
-                
-            },
-            Load { dst, src } => {
-                
-            },
-            LoadConst { dst, num } => {
-                
-            },
+            Store { src, dst } => {}
+            Load { dst, src } => {}
+            LoadConst { dst, num } => {}
             // Arithmetic operators
-            Add { dst, src1, src2 } => {
-                
-            },
-            Sub { dst, src1, src2 } => {
-                
-            },
-            Mul { dst, src1, src2 } => {
-                
-            },
-            Div { dst, src1, src2 } => {
-                
-            },
-            Rem { dst, src1, src2 } => {
-                
-            },
-            Negate { dst, src } => {
-                
-            },
+            Add { dst, src1, src2 } => {}
+            Sub { dst, src1, src2 } => {}
+            Mul { dst, src1, src2 } => {}
+            Div { dst, src1, src2 } => {}
+            Rem { dst, src1, src2 } => {}
+            Negate { dst, src } => {}
 
             // Logic operators
-            And { dst, src1, src2 } => {
-
-            },
-            Or { dst, src1, src2 } => {
-
-            },
-            Xor { dst, src1, src2 } => {
-                
-            },
+            And { dst, src1, src2 } => {}
+            Or { dst, src1, src2 } => {}
+            Xor { dst, src1, src2 } => {}
             // Other operators
-            Icmp  => {
-
-            },
-            Phi => {
-
-            },
+            Icmp => {}
+            Phi => {}
         }
     }
 

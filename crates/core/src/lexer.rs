@@ -140,9 +140,13 @@ pub struct LexerError {
 impl LexerError {
     pub fn details(&self) -> (String, Vec<String>) {
         match &self.kind {
-            LexerErrorType::UnrecognizedToken { tok } => (format!("Unrecognized token: '{tok}'"), vec![]),
+            LexerErrorType::UnrecognizedToken { tok } => {
+                (format!("Unrecognized token: '{tok}'"), vec![])
+            }
             LexerErrorType::MissingExponent => ("Missing exponent".into(), vec![]),
-            LexerErrorType::UnterminatedStringLiteral => ("Unterminated string literal".into(), vec![]),
+            LexerErrorType::UnterminatedStringLiteral => {
+                ("Unterminated string literal".into(), vec![])
+            }
             LexerErrorType::RadixIntNoValue => ("Radix int no value".into(), vec![]),
             LexerErrorType::DigitOutOfRadix => ("Digit out of radix".into(), vec![]),
             LexerErrorType::TooBigValue => ("Too big value".into(), vec![]),
@@ -152,8 +156,8 @@ impl LexerError {
 
 #[derive(Debug, Clone)]
 pub enum LexerErrorType {
-    UnrecognizedToken { tok: char },  
-    MissingExponent,                  // For example 100e - there is no number after 'e'
+    UnrecognizedToken { tok: char },
+    MissingExponent, // For example 100e - there is no number after 'e'
     UnterminatedStringLiteral,
     RadixIntNoValue,
     DigitOutOfRadix,
@@ -212,8 +216,8 @@ pub fn str_to_keyword(word: &str) -> Option<TokenType> {
 
 // TODO: implement Iter trait for Lexer
 impl<T> Lexer<T>
-where 
-    T: Iterator<Item = char>
+where
+    T: Iterator<Item = char>,
 {
     pub fn new(istream: T) -> Self {
         let mut lxr = Lexer {
@@ -387,7 +391,10 @@ where
                 if exponent_run.is_empty() {
                     return Err(LexerError {
                         kind: LexerErrorType::MissingExponent,
-                        location: SrcSpan { start: start_pos, end: self.get_pos() },
+                        location: SrcSpan {
+                            start: start_pos,
+                            end: self.get_pos(),
+                        },
                     });
                 }
                 value.push_str(&exponent_run);
@@ -445,16 +452,21 @@ where
             match self.peek() {
                 Some('\'') => {
                     break;
-                },
+                }
                 Some(chr) => {
                     // may cause reallocations, but it's not really important
                     literal.push(chr);
                     self.next_char();
-                },
-                None => return Err(LexerError {
-                    location: SrcSpan { start: start_pos, end: self.get_pos() },
-                    kind: LexerErrorType::UnterminatedStringLiteral,
-                })
+                }
+                None => {
+                    return Err(LexerError {
+                        location: SrcSpan {
+                            start: start_pos,
+                            end: self.get_pos(),
+                        },
+                        kind: LexerErrorType::UnterminatedStringLiteral,
+                    })
+                }
             }
         }
         let end_pos = self.loc0;
@@ -495,11 +507,19 @@ where
         let end_pos = self.loc0;
 
         match str_to_keyword(&name) {
-            Some(kind) => Ok(Token { start_pos, kind, end_pos }),
+            Some(kind) => Ok(Token {
+                start_pos,
+                kind,
+                end_pos,
+            }),
             _ => {
-                let kind = TokenType::Identifier(name.into()); 
-                Ok(Token { start_pos, kind, end_pos })
-            },
+                let kind = TokenType::Identifier(name.into());
+                Ok(Token {
+                    start_pos,
+                    kind,
+                    end_pos,
+                })
+            }
         }
     }
 
@@ -542,19 +562,29 @@ where
             Kind::Comment => TokenType::Comment,
             Kind::Doc => TokenType::CommentDoc { content },
         };
-        Token { start_pos, kind, end_pos }
+        Token {
+            start_pos,
+            kind,
+            end_pos,
+        }
     }
 
     fn lex_oneline_comment(&mut self) -> Token {
         let start_pos = self.get_pos();
         while Some('\n') != self.chr0 {
             match self.chr0 {
-                Some(_) => { let _ = self.next_char(); },
+                Some(_) => {
+                    let _ = self.next_char();
+                }
                 None => break,
             }
         }
         let end_pos = self.get_pos();
-        Token { start_pos, kind: TokenType::Comment, end_pos }
+        Token {
+            start_pos,
+            kind: TokenType::Comment,
+            end_pos,
+        }
     }
 
     fn consume_character(&mut self, ch: char) -> Result<()> {
@@ -567,65 +597,53 @@ where
             ']' => self.add_tok1(TokenType::RightBrack),
             '=' => self.add_tok1(TokenType::Equal),
             ',' => self.add_tok1(TokenType::Comma),
-            '(' => {
-                match self.peek_next() {
-                    Some('*') => {
-                        self.next_char();
-                        let comment = self.lex_multiline_comment();
-                        self.ostream.push(comment);
-                    },
-                    _ => self.add_tok1(TokenType::LeftParen),
+            '(' => match self.peek_next() {
+                Some('*') => {
+                    self.next_char();
+                    let comment = self.lex_multiline_comment();
+                    self.ostream.push(comment);
                 }
-            }
-            '/' => {
-                match self.peek_next() {
-                    Some('/') => {
-                        self.next_char();
-                        let comment = self.lex_oneline_comment();
-                        self.ostream.push(comment);
-                    },
-                    _ => self.add_tok1(TokenType::Slash),
-                }
+                _ => self.add_tok1(TokenType::LeftParen),
             },
-            '<' => {
-                match self.peek_next() {
-                    Some('=') => {
-                        self.next_char();
-                        self.add_tokn(TokenType::LessEqual, 2)
-                    },
-                    Some('>') => {
-                        self.next_char();
-                        self.add_tokn(TokenType::NotEqual, 2)
-                    },
-                    _ => self.add_tok1(TokenType::Less),
+            '/' => match self.peek_next() {
+                Some('/') => {
+                    self.next_char();
+                    let comment = self.lex_oneline_comment();
+                    self.ostream.push(comment);
                 }
+                _ => self.add_tok1(TokenType::Slash),
             },
-            '>' => {
-                match self.peek_next() {
-                    Some('=') => {
-                        self.next_char();
-                        self.add_tokn(TokenType::GreaterEqual, 2)
-                    },
-                    _ => self.add_tok1(TokenType::Greater),
+            '<' => match self.peek_next() {
+                Some('=') => {
+                    self.next_char();
+                    self.add_tokn(TokenType::LessEqual, 2)
                 }
+                Some('>') => {
+                    self.next_char();
+                    self.add_tokn(TokenType::NotEqual, 2)
+                }
+                _ => self.add_tok1(TokenType::Less),
             },
-            ':' => {
-                match self.peek_next() {
-                    Some('=') => {
-                        self.next_char();
-                        self.add_tokn(TokenType::Assignment, 2)
-                    },
-                    _ => self.add_tok1(TokenType::Colon),
+            '>' => match self.peek_next() {
+                Some('=') => {
+                    self.next_char();
+                    self.add_tokn(TokenType::GreaterEqual, 2)
                 }
+                _ => self.add_tok1(TokenType::Greater),
             },
-            '.' => {
-                match self.peek_next() {
-                    Some('.') => {
-                        self.next_char();
-                        self.add_tokn(TokenType::DotDot, 2)
-                    },
-                    _ => self.add_tok1(TokenType::Dot),
+            ':' => match self.peek_next() {
+                Some('=') => {
+                    self.next_char();
+                    self.add_tokn(TokenType::Assignment, 2)
                 }
+                _ => self.add_tok1(TokenType::Colon),
+            },
+            '.' => match self.peek_next() {
+                Some('.') => {
+                    self.next_char();
+                    self.add_tokn(TokenType::DotDot, 2)
+                }
+                _ => self.add_tok1(TokenType::Dot),
             },
             '@' => {
                 self.next_char();
@@ -633,12 +651,12 @@ where
                     Some('@') => self.add_tokn(TokenType::DoubleBleat, 2),
                     _ => self.add_tok1(TokenType::Bleat),
                 }
-            },
+            }
             '\'' => {
                 self.next_char();
                 let string = self.lex_string_literal()?;
                 self.ostream.push(string);
-            },
+            }
             c => {
                 let location = self.get_pos();
                 return Err(LexerError {
@@ -695,7 +713,10 @@ where
         let token = self.inner_next();
 
         match token {
-            Ok(Token { kind: TokenType::Eof, .. }) => None,
+            Ok(Token {
+                kind: TokenType::Eof,
+                ..
+            }) => None,
             r => Some(r),
         }
     }
@@ -709,9 +730,11 @@ mod tests {
     fn lex_arith() {
         let lexer = Lexer::new("y = x / (1 + 2) * 4".chars());
         let result = lexer.into_iter().collect::<Vec<_>>();
-        let result = result.into_iter()
+        let result = result
+            .into_iter()
             .collect::<Result<Vec<_>, _>>()
-            .unwrap().into_iter()
+            .unwrap()
+            .into_iter()
             .map(|tok| tok.kind)
             .collect::<Vec<_>>();
         assert_eq!(
@@ -722,8 +745,8 @@ mod tests {
                 TokenType::Identifier(String::from("x")),
                 TokenType::Slash,
                 TokenType::LeftParen,
-                TokenType::UnsignedInteger(String::from("1")), 
-                TokenType::Plus, 
+                TokenType::UnsignedInteger(String::from("1")),
+                TokenType::Plus,
                 TokenType::UnsignedInteger(String::from("2")),
                 TokenType::RightParen,
                 TokenType::Star,

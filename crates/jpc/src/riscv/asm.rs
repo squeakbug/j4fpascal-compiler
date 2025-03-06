@@ -1,6 +1,6 @@
 use std::fmt::{self, Display};
 
-use crate::riscv::instruction::{Iorw, Instruction};
+use crate::riscv::instruction::{Instruction, Iorw};
 
 impl Display for Instruction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -82,28 +82,60 @@ impl Display for Instruction {
             // RV32F extension:
             Instruction::FLW { frd, rs1, offset } => write!(f, "flw f{frd}, {offset}(x{rs1})"),
             Instruction::FSW { rs1, frs2, offset } => write!(f, "fsw f{frs2}, {offset}(x{rs1})"),
-            Instruction::FMADD_S { frd, frs1, frs2, frs3, .. } => {
+            Instruction::FMADD_S {
+                frd,
+                frs1,
+                frs2,
+                frs3,
+                ..
+            } => {
                 write!(f, "fmadd.s f{frd}, f{frs1}, f{frs2}, f{frs3}")
             }
-            Instruction::FMSUB_S { frd, frs1, frs2, frs3, .. } => {
+            Instruction::FMSUB_S {
+                frd,
+                frs1,
+                frs2,
+                frs3,
+                ..
+            } => {
                 write!(f, "fmsub.s f{frd}, f{frs1}, f{frs2}, f{frs3}")
             }
-            Instruction::FNMSUB_S { frd, frs1, frs2, frs3, .. } => {
+            Instruction::FNMSUB_S {
+                frd,
+                frs1,
+                frs2,
+                frs3,
+                ..
+            } => {
                 write!(f, "fnmsub.s f{frd}, f{frs1}, f{frs2}, f{frs3}")
             }
-            Instruction::FNMADD_S { frd, frs1, frs2, frs3, .. } => {
+            Instruction::FNMADD_S {
+                frd,
+                frs1,
+                frs2,
+                frs3,
+                ..
+            } => {
                 write!(f, "fnmadd.s f{frd}, f{frs1}, f{frs2}, f{frs3}")
             }
-            Instruction::FADD_S { frd, frs1, frs2, .. } => {
+            Instruction::FADD_S {
+                frd, frs1, frs2, ..
+            } => {
                 write!(f, "fadd.s f{frd}, f{frs1}, f{frs2}")
             }
-            Instruction::FSUB_S { frd, frs1, frs2, .. } => {
+            Instruction::FSUB_S {
+                frd, frs1, frs2, ..
+            } => {
                 write!(f, "fsub.s f{frd}, f{frs1}, f{frs2}")
             }
-            Instruction::FMUL_S { frd, frs1, frs2, .. } => {
+            Instruction::FMUL_S {
+                frd, frs1, frs2, ..
+            } => {
                 write!(f, "fmul.s f{frd}, f{frs1}, f{frs2}")
             }
-            Instruction::FDIV_S { frd, frs1, frs2, .. } => {
+            Instruction::FDIV_S {
+                frd, frs1, frs2, ..
+            } => {
                 write!(f, "fdiv.s f{frd}, f{frs1}, f{frs2}")
             }
             Instruction::FSQRT_S { frd, frs1, .. } => write!(f, "fsqrt.s f{frd}, f{frs1}"),

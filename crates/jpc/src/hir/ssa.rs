@@ -3,9 +3,7 @@ use std::rc::Rc;
 
 use super::codegen::Instruction;
 
-pub struct IRBuilder {
-
-}
+pub struct IRBuilder {}
 
 pub struct BasicBlock {
     pub label: String,
@@ -33,9 +31,7 @@ pub struct ProcedureIR {
 
 impl IRBuilder {
     pub fn new() -> Self {
-        IRBuilder {
-            
-        }
+        IRBuilder {}
     }
 
     pub fn build(func_decl: ProcedureDeclaration) -> ProcedureIR {

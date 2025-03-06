@@ -49,7 +49,10 @@ impl FromStr for Target {
         };
         let rest = &rest[2..];
 
-        let mut target = Target { xlen, ..Default::default() };
+        let mut target = Target {
+            xlen,
+            ..Default::default()
+        };
 
         let mut extensions = rest;
         while !extensions.is_empty() {

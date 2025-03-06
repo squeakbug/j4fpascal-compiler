@@ -4,14 +4,19 @@ use camino::Utf8PathBuf;
 use termcolor::Buffer;
 use thiserror::Error;
 
-use crate::{diagnostic::{Diagnostic, Label, Level, Location}, lexer::{self, SrcSpan}, parser::{ParserError, ParserErrorType}, sema::SemanticError};
+use crate::{
+    diagnostic::{Diagnostic, Label, Level, Location},
+    lexer::{self, SrcSpan},
+    parser::{ParserError, ParserErrorType},
+    sema::SemanticError,
+};
 
 pub type Result<Ok, Err = Error> = std::result::Result<Ok, Err>;
 
 #[derive(Debug, Clone, Error)]
 pub enum Error {
     #[error("failed to scan source code")]
-    Lexer{
+    Lexer {
         path: Utf8PathBuf,
         src: String,
         error: lexer::LexerError,
@@ -67,7 +72,7 @@ impl Error {
                         extra_labels: vec![],
                     }),
                 }]
-            },
+            }
             Error::Parser { path, src, error } => {
                 let (label, extra) = error.details();
                 let text = extra.join("\n");
@@ -96,7 +101,7 @@ impl Error {
                         extra_labels: vec![],
                     }),
                 }]
-            },
+            }
             Error::Semantic { path, src, error } => {
                 let (label, extra) = error.details();
                 let text = extra.join("\n");
@@ -116,7 +121,7 @@ impl Error {
                         extra_labels: vec![],
                     }),
                 }]
-            },
+            }
         }
     }
 }

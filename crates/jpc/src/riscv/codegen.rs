@@ -2,29 +2,24 @@ use std::{collections::HashMap, fmt};
 
 use core::{
     ast::{
-        Block, DeclSection, DesignatorItem, Expr, 
-        ProcedureDeclaration, Stmt, TypeDeclaration, 
-        UnlabeledStmt, VarDeclaration
+        Block, DeclSection, DesignatorItem, Expr, ProcedureDeclaration, Stmt, TypeDeclaration,
+        UnlabeledStmt, VarDeclaration,
     },
-    lexer::{self, Lexer}, 
-    parser::Parser
+    lexer::{self, Lexer},
+    parser::Parser,
 };
 
-pub struct CodeEmmiter {
-    
-}
+pub struct CodeEmmiter {}
 
 impl CodeEmmiter {
     pub fn new() -> Self {
-        CodeEmmiter {
-            
-        }
+        CodeEmmiter {}
     }
 }
 
 #[derive(Debug)]
 pub enum CodegenError {
-    NotImplemented
+    NotImplemented,
 }
 
 impl CodeEmmiter {

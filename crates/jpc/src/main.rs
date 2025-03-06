@@ -1,8 +1,10 @@
-mod riscv;
 mod hir;
+mod riscv;
 
 use std::{
-    env, fs::{self, File}, io::{self, BufWriter, Read}
+    env,
+    fs::{self, File},
+    io::{self, BufWriter, Read},
 };
 
 use clap::{Arg, Command, CommandFactory, Parser};
@@ -54,7 +56,7 @@ fn main() -> io::Result<()> {
             "tok" => is_need_tok_out = true,
             "ast" => is_need_ast_out = true,
             "hir" => is_need_hir_out = true,
-            _ => println!("Unknown")
+            _ => println!("Unknown"),
         }
     }
 
@@ -63,7 +65,9 @@ fn main() -> io::Result<()> {
         let source = read_file(&input)?;
 
         let mb_tokens = lexer::Lexer::new(source.chars()).collect::<Vec<_>>();
-        let tokens = mb_tokens.into_iter().collect::<Result<Vec<_>, _>>()
+        let tokens = mb_tokens
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()
             .expect("Failed to scan");
         if is_need_tok_out {
             if let Err(err) = fs::write(format!("{input}.tok"), format!("{:#?}", &tokens)) {
@@ -79,7 +83,8 @@ fn main() -> io::Result<()> {
             }
         }
 
-        gen.visit_program(&Box::new(ast)).expect("Failed to codegen");
+        gen.visit_program(&Box::new(ast))
+            .expect("Failed to codegen");
         if is_need_hir_out {
             let file = File::create(format!("{input}.hir"))?;
             if let Err(err) = gen.dump(&mut BufWriter::new(file)) {

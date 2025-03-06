@@ -1,8 +1,6 @@
 use crate::lexer::SrcSpan;
 
-pub struct Resolver {
-
-}
+pub struct Resolver {}
 
 #[derive(Debug, Clone)]
 pub struct SemanticError {
@@ -32,7 +30,5 @@ impl SemanticError {
 }
 
 impl Resolver {
-    pub fn new() {
-        
-    }
+    pub fn new() {}
 }

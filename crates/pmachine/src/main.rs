@@ -63,45 +63,46 @@ impl PMachine {
             match self.imem[self.ip] {
                 val if val == Opcode::Break as u8 => {
                     break;
-                },
+                }
                 val if val == Opcode::Push as u8 => {
-                    let bytes = self.imem[self.ip + 1..self.ip + 5].try_into()
+                    let bytes = self.imem[self.ip + 1..self.ip + 5]
+                        .try_into()
                         .map_err(|_e| RuntimeError::FailedToParseValue)?;
                     let v = u32::from_be_bytes(bytes);
                     self.dpush(v);
                     self.ip += 5;
-                },
+                }
                 val if val == Opcode::Pop as u8 => {
                     let a = self.dpop().ok_or(RuntimeError::EmptyStack)?;
                     let b = self.dpop().ok_or(RuntimeError::EmptyStack)?;
                     self.dpush(a + b);
                     self.ip += 1;
-                },
+                }
                 val if val == Opcode::Add as u8 => {
                     let a = self.dpop().ok_or(RuntimeError::EmptyStack)?;
                     let b = self.dpop().ok_or(RuntimeError::EmptyStack)?;
                     self.dpush(a + b);
                     self.ip += 1;
-                },
+                }
                 val if val == Opcode::Sub as u8 => {
                     let a = self.dpop().ok_or(RuntimeError::EmptyStack)?;
                     let b = self.dpop().ok_or(RuntimeError::EmptyStack)?;
                     self.dpush(a - b);
                     self.ip += 1;
-                },
+                }
                 val if val == Opcode::Mul as u8 => {
                     let a = self.dpop().ok_or(RuntimeError::EmptyStack)?;
                     let b = self.dpop().ok_or(RuntimeError::EmptyStack)?;
                     self.dpush(a * b);
                     self.ip += 1;
-                },
+                }
                 val if val == Opcode::Div as u8 => {
                     let a = self.dpop().ok_or(RuntimeError::EmptyStack)?;
                     let b = self.dpop().ok_or(RuntimeError::EmptyStack)?;
                     self.dpush(a / b);
                     self.ip += 1;
-                },
-                _ => { }
+                }
+                _ => {}
             }
         }
         Ok(())
@@ -128,35 +129,36 @@ pub fn deassemble(code: Vec<u8>) -> Result<(), DeassembleError> {
             val if val == Opcode::Break as u8 => {
                 addr += 1;
                 println!("{addr:08x}   break");
-            },
+            }
             val if val == Opcode::Push as u8 => {
-                let bytes = code[addr + 1..addr + 5].try_into()
+                let bytes = code[addr + 1..addr + 5]
+                    .try_into()
                     .map_err(|_e| DeassembleError::FailedToParseValue)?;
                 let v = u32::from_be_bytes(bytes);
                 addr += 5;
                 println!("{addr:08x}   push {v:#x}");
-            },
+            }
             val if val == Opcode::Pop as u8 => {
                 addr += 1;
                 println!("{addr:08x}   pop");
-            },
+            }
             val if val == Opcode::Add as u8 => {
                 addr += 1;
                 println!("{addr:08x}   add");
-            },
+            }
             val if val == Opcode::Sub as u8 => {
                 addr += 1;
                 println!("{addr:08x}   sub");
-            },
+            }
             val if val == Opcode::Mul as u8 => {
                 addr += 1;
                 println!("{addr:08x}   mul");
-            },
+            }
             val if val == Opcode::Div as u8 => {
                 addr += 1;
                 println!("{addr:08x}   div");
-            },
-            _ => { }
+            }
+            _ => {}
         }
     }
     Ok(())

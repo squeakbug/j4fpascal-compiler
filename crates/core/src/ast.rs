@@ -145,7 +145,7 @@ pub enum TypeDecl {
     },
     SimpleType {
         ident: String,
-    }
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -166,9 +166,9 @@ pub enum ParamModifier {
 #[derive(Debug, Clone)]
 pub struct Param {
     pub modifier: Option<ParamModifier>,
-    pub ident: String, 
+    pub ident: String,
     pub type_decl: Option<TypeDecl>,
-    pub init_value: Option<Box<Expr>>
+    pub init_value: Option<Box<Expr>>,
 }
 
 #[derive(Debug, Clone)]
@@ -192,11 +192,11 @@ pub struct TypeDeclaration {
 
 #[derive(Debug, Clone)]
 pub enum DeclSection {
-    Label (Vec<String>),
-    Const (Vec<(String, Box<Expr>)>),
-    Type (Vec<TypeDeclaration>),
-    Variable (Vec<VarDeclaration>),
-    Procedure (ProcedureDeclaration),
+    Label(Vec<String>),
+    Const(Vec<(String, Box<Expr>)>),
+    Type(Vec<TypeDeclaration>),
+    Variable(Vec<VarDeclaration>),
+    Procedure(ProcedureDeclaration),
 }
 
 #[derive(Debug, Clone)]

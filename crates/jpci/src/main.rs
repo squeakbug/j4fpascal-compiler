@@ -1,8 +1,10 @@
-mod interpreter;
 mod callable;
+mod interpreter;
 
 use std::{
-    env, fs::{self, File}, io::{self, BufWriter, Write, Read}
+    env,
+    fs::{self, File},
+    io::{self, BufWriter, Read, Write},
 };
 
 use camino::Utf8PathBuf;
@@ -43,15 +45,17 @@ fn main() -> io::Result<()> {
             "tok" => is_need_tok_out = true,
             "ast" => is_need_ast_out = true,
             "hir" => is_need_hir_out = true,
-            _ => println!("Unknown")
+            _ => println!("Unknown"),
         }
     }
 
     let mut eval = |ifilename: Option<String>, exp: &str| {
         let ifilename = ifilename.unwrap_or(String::from("stdin"));
         let mb_tokens = lexer::Lexer::new(exp.chars()).collect::<Vec<_>>();
-        let tokens = mb_tokens.into_iter().collect::<Result<Vec<_>, _>>()
-            .map_err(|error| Error::Lexer { 
+        let tokens = mb_tokens
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| Error::Lexer {
                 path: Utf8PathBuf::from(exp),
                 src: exp.to_string(),
                 error,
@@ -64,7 +68,8 @@ fn main() -> io::Result<()> {
         }
 
         let mut parser = parser::Parser::new(tokens.into_iter());
-        let ast = parser.parse()
+        let ast = parser
+            .parse()
             .map_err(|err| Error::Parser {
                 path: Utf8PathBuf::from(exp),
                 src: exp.to_string(),
