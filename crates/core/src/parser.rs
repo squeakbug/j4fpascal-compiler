@@ -7,6 +7,26 @@ use crate::{
     lexer::{SrcSpan, Token, TokenType},
 };
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ParserErrorType {
+    ExpectedProgram,
+    ExpectedIdentifier,
+    ExpectedExpression,
+    ExpectedTerm,
+    ExpectedSimpleExpression,
+    ExpectedFactor,
+    ExpectedLeftParen,
+    ExpectedToken { tok: TokenType },
+    ExpectedFormalParameter,
+    ExpectedActualParameter,
+    ExpectedUnlabeledStmt,
+    ExpectedBlock,
+    ExpectedTypeDeclaration,
+    ExpectedCaseLabel,
+    ExpectedDesignator,
+    UnexpectedEof,
+}
+
 #[derive(Debug, Clone)]
 pub struct ParserError {
     pub location: SrcSpan,
@@ -26,6 +46,11 @@ impl ParserError {
             ParserErrorType::ExpectedUnlabeledStmt => ("Expected unlabeled statement".into(), vec![]),
             ParserErrorType::ExpectedBlock => ("Expected block".into(), vec![]),
             ParserErrorType::ExpectedTypeDeclaration => ("Expected type declaration".into(), vec![]),
+            ParserErrorType::ExpectedCaseLabel => ("Expected case label".into(), vec![]),
+            ParserErrorType::ExpectedTerm => ("Expected term".into(), vec![]),
+            ParserErrorType::ExpectedSimpleExpression => ("Expected simple expr".into(), vec![]),
+            ParserErrorType::ExpectedFactor => ("Expected factor".into(), vec![]),
+            ParserErrorType::ExpectedDesignator => ("Expected designator".into(), vec![]),
             ParserErrorType::UnexpectedEof => ("Unexpected EOF".into(), vec![]),
         }
     }
@@ -45,21 +70,6 @@ fn error_tok(kind: ParserErrorType, prev_tok: &Token) -> ParserError {
 // TODO: make two types of functions:
 // expected_* - try to parse rule. If rule is not acceptable, then return Error
 // parse_* - try to parse rule. If rule is not acceptable, then return Ok(None)
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ParserErrorType {
-    ExpectedProgram,
-    ExpectedIdentifier,
-    ExpectedExpression,
-    ExpectedLeftParen,
-    ExpectedToken { tok: TokenType },
-    ExpectedFormalParameter,
-    ExpectedActualParameter,
-    ExpectedUnlabeledStmt,
-    ExpectedBlock,
-    ExpectedTypeDeclaration,
-    UnexpectedEof,
-}
 
 pub struct Parser<T: Iterator<Item = Token>> {
     istream: T,
@@ -120,6 +130,7 @@ where
         t
     }
 
+    // TODO: rename to "expected_token"
     fn consume(&mut self, expected: TokenType, pos: SrcSpan) -> Result<Token, ParserError> {
         match self.advance() {
             Some(token) if token.kind == expected => {
@@ -250,6 +261,15 @@ where
                 return Some(name.clone());
             },
             _ => None,
+        }
+    }
+
+    fn expected_identifier(&mut self, prev_tok: &Token) -> Result<(Token, String), ParserError> {
+        match self.advance() {
+            Some(ref ident_token@Token { kind: TokenType::Identifier(ref name), .. }) => {
+                return Ok((ident_token.clone(), name.to_string()));
+            },
+            _ => return Err(error_tok(ParserErrorType::ExpectedIdentifier, &prev_tok)),
         }
     }
 
@@ -474,29 +494,32 @@ where
         return Ok(parameters);
     }
 
+    fn expected_type_decl(&mut self, prev_tok: &Token) -> Result<TypeDecl, ParserError> {
+        if let Some(type_decl) = self.type_decl()? {
+            Ok(type_decl)
+        } else {
+            return Err(error_tok(ParserErrorType::ExpectedTypeDeclaration, prev_tok));
+        }
+    }
+
     fn proc_decl_heading(&mut self) -> Result<Option<ProcedureHeadDeclaration>, ParserError> {
         if let Some(proc_token@Token { kind: TokenType::Procedure, .. }) = self.peek() {
             self.advance();
-            match self.peek() {
-                Some(ref ident_token@Token { kind: TokenType::Identifier(ref name), .. }) => {
-                    self.advance();
-                    match self.peek() {
-                        Some(Token { kind: TokenType::LeftParen,.. }) => {
-                            self.advance();
-                            let params = self.formal_parameter_list()?;
-                            self.consume(TokenType::RightParen, ident_token.into())?;
-                            self.consume(TokenType::Semicolon, ident_token.into())?;
-                            Ok(Some(ProcedureHeadDeclaration {
-                                name: name.clone(),
-                                params,
-                                return_type: None,
-                            }))
-                        },
-                        _ => Err(error_tok(ParserErrorType::ExpectedLeftParen, &ident_token))
-                    }
-                },
-                _ => Err(error_tok(ParserErrorType::ExpectedIdentifier, &proc_token))
+            let (ident_token, name) = self.expected_identifier(&proc_token)?;
+            self.consume(TokenType::LeftParen, ident_token.as_ref().into())?;
+            let params = self.formal_parameter_list()?;
+            self.consume(TokenType::RightParen, ident_token.as_ref().into())?;
+            let mut return_type = None;
+            if let Some(ref colon_tok @ Token { kind: TokenType::Colon, .. }) = self.peek() {
+                self.advance();
+                return_type = Some(self.expected_type_decl(&colon_tok)?);
             }
+            self.consume(TokenType::Semicolon, ident_token.as_ref().into())?;
+            Ok(Some(ProcedureHeadDeclaration {
+                name,
+                params,
+                return_type,
+            }))
         } else {
             Ok(None)
         }
@@ -520,59 +543,51 @@ where
         }
     }
 
-    fn statement(&mut self) -> Result<Option<Stmt>, ParserError> {
+    fn statement(&mut self) -> Result<Stmt, ParserError> {
         if let Some(token) = self.peek() {
             if token.kind == TokenType::Label {
                 self.advance();
                 self.consume(TokenType::Colon, token.as_ref().into())?;
-                match self.unlabeled_statement()? {
-                    Some(statement) => {
-                        Ok(Some(Stmt {
-                            label: Some(token),
-                            statement: Box::new(statement),
-                        }))
-                    },
-                    None => Err(error_tok(ParserErrorType::ExpectedUnlabeledStmt, &token)),
-                }
+                let statement = self.unlabeled_statement()?;
+                Ok(Stmt {
+                    label: Some(token),
+                    statement: Box::new(statement),
+                })
             } else {
-                match self.unlabeled_statement()? {
-                    Some(statement) => {
-                        Ok(Some(Stmt {
-                            label: Some(token),
-                            statement: Box::new(statement),
-                        }))
-                    },
-                    None => Ok(None),
-                }
+                let statement = self.unlabeled_statement()?;
+                Ok(Stmt {
+                    label: Some(token),
+                    statement: Box::new(statement),
+                })
             }
         } else {
-            Ok(None)
+            Err(parser_error(ParserErrorType::UnexpectedEof, SrcSpan { start: 0, end: 0 }))
         }
     }
 
-    fn unlabeled_statement(&mut self) -> Result<Option<UnlabeledStmt>, ParserError> {
+    fn unlabeled_statement(&mut self) -> Result<UnlabeledStmt, ParserError> {
         if let Some(stmt) = self.if_statement()? {
-            Ok(Some(stmt))
+            Ok(stmt)
         } else if let Some(stmt) = self.case_statement()? {
-            Ok(Some(stmt))
+            Ok(stmt)
         } else if let Some(stmt) = self.repeat_statement()? {
-            Ok(Some(stmt))
+            Ok(stmt)
         } else if let Some(stmt) = self.while_statement()? {
-            Ok(Some(stmt))
+            Ok(stmt)
         } else if let Some(stmt) = self.for_statement()? {
-            Ok(Some(stmt))
+            Ok(stmt)
         } else if let Some(stmt) = self.with_statement()? {
-            Ok(Some(stmt))
+            Ok(stmt)
         } else if let Some(stmt) = self.try_statement()? {
-            Ok(Some(stmt))
+            Ok(stmt)
         } else if let Some(stmt) = self.raise_statement()? {
-            Ok(Some(stmt))
+            Ok(stmt)
         } else if let Some(stmt) = self.compound_statement()? {
-            Ok(Some(stmt))
+            Ok(stmt)
         } else if let Some(stmt) = self.simple_statement()? {
-            Ok(Some(stmt))
+            Ok(stmt)
         } else {
-            Ok(None)
+            Ok(UnlabeledStmt::Empty)
         }
     }
 
@@ -600,7 +615,7 @@ where
             if let Some(token) = self.peek() {
                 if token.kind == TokenType::Colon {
                     self.advance();
-                    let expression = Box::new(self.expression()?.unwrap());
+                    let expression = Box::new(self.expected_expression(&token)?);
                     expressions.push(expression)
                 } else {
                     break;
@@ -611,9 +626,21 @@ where
     }
 
     fn actual_parameter(&mut self) -> Result<Option<(Box<Expr>, Vec<Box<Expr>>)>, ParserError> {
-        let parameter = Box::new(self.expression()?.unwrap());
-        let colon_construct = self.colon_construct()?;
-        Ok(Some((parameter, colon_construct)))
+        if let Some(expr) = self.expression()? {
+            let parameter = Box::new(expr);
+            let colon_construct = self.colon_construct()?;
+            Ok(Some((parameter, colon_construct)))
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn expected_actual_parameter(&mut self, prev_tok: &Token) -> Result<(Box<Expr>, Vec<Box<Expr>>), ParserError> {
+        if let Some(parameter) = self.actual_parameter()? {
+            Ok(parameter)
+        } else {
+            return Err(error_tok(ParserErrorType::ExpectedActualParameter, &prev_tok))
+        }
     }
 
     fn parameter_list(&mut self) -> Result<Vec<(Box<Expr>, Vec<Box<Expr>>)>, ParserError> {
@@ -623,11 +650,8 @@ where
             while let Some(token) = self.peek() {
                 if token.kind == TokenType::Comma {
                     self.advance();
-                    if let Some(parameter) = self.actual_parameter()? {
-                        parameters.push(parameter);
-                    } else {
-                        return Err(error_tok(ParserErrorType::ExpectedActualParameter, &token))
-                    }
+                    let parameter = self.expected_actual_parameter(&token)?;
+                    parameters.push(parameter);
                 } else {
                     break;
                 }
@@ -699,16 +723,24 @@ where
         }
     }
 
+    fn expected_designator(&mut self, prev_tok: &Token) -> Result<Designator, ParserError> {
+        if let Some(designator) = self.designator()? {
+            Ok(designator)
+        } else {
+            Err(error_tok(ParserErrorType::ExpectedDesignator, &prev_tok))
+        }
+    }
+
     // TODO: add structured identifier
     fn simple_statement(&mut self) -> Result<Option<UnlabeledStmt>, ParserError> {
         if let Some(designator) = self.designator()? {
             if let Some(token) = self.peek() {
                 if token.kind == TokenType::Assignment {
                     self.advance();
-                    let expression = self.expression()?;
+                    let expression = self.expected_expression(&token)?;
                     return Ok(Some(UnlabeledStmt::Assigment {
                         left: designator,
-                        right: Box::new(expression.unwrap()),
+                        right: Box::new(expression),
                     }));
                 } else {
                     return Ok(Some(UnlabeledStmt::ProcedureCall {
@@ -723,18 +755,12 @@ where
     }
 
     fn statement_list(&mut self) -> Result<Vec<Box<Stmt>>, ParserError> {
-        let mut statements = vec![];
-        if let Some(statement) = self.statement()? {
-            statements.push(Box::new(statement));
-            while let Some(token) = self.peek() {
-                if token.kind == TokenType::Semicolon {
-                    self.advance();
-                } else {
-                    match self.statement()? {
-                        Some(statement) => statements.push(Box::new(statement)),
-                        None => break,
-                    }
-                }
+        let mut statements = vec![Box::new(self.statement()?)];
+        while let Some(token) = self.peek() {
+            if token.kind == TokenType::Semicolon {
+                self.advance();
+                let statement = self.statement()?;
+                statements.push(Box::new(statement));
             }
         }
         return Ok(statements);
@@ -757,14 +783,14 @@ where
         if let Some(token) = self.peek() {
             if token.kind == TokenType::If {
                 self.advance();
-                let condition = Box::new(self.expression()?.unwrap());
+                let condition = Box::new(self.expected_expression(&token)?);
                 self.consume(TokenType::Then, token.as_ref().into())?;
-                let then_branch = Box::new(self.statement()?.unwrap());
+                let then_branch = Box::new(self.statement()?);
                 let mut else_branch = None;
                 if let Some(token) = self.peek() {
                     if token.kind == TokenType::Else {
                         self.advance();
-                        else_branch = Some(Box::new(self.statement()?.unwrap()));
+                        else_branch = Some(Box::new(self.statement()?));
                     }
                     return Ok(Some(UnlabeledStmt::If {
                         condition,
@@ -777,51 +803,63 @@ where
         Ok(None)
     }
 
-    fn case_label(&mut self) -> Result<CaseLabel, ParserError> {
-        let from = Box::new(self.expression()?.unwrap());
-        if let Some(token) = self.peek() {
-            if token.kind == TokenType::DotDot {
-                self.advance();
-                let to = Box::new(self.expression()?.unwrap());
-                return Ok(CaseLabel::Range((from, to)));
+    fn case_label(&mut self) -> Result<Option<CaseLabel>, ParserError> {
+        if let Some(expr) = self.expression()? {
+            let from = Box::new(expr);
+            if let Some(token) = self.peek() {
+                if token.kind == TokenType::DotDot {
+                    self.advance();
+                    let to = Box::new(self.expected_expression(&token)?);
+                    return Ok(Some(CaseLabel::Range((from, to))));
+                }
             }
+            return Ok(Some(CaseLabel::Simple(from)));   
+        } else {
+            Ok(None)
         }
-        return Ok(CaseLabel::Simple(from));
     }
 
-    fn case_item(&mut self) -> Result<CaseItem, ParserError> {
-        let mut labels = vec![self.case_label()?];
-        while let Some(token) = self.peek() {
-            if token.kind == TokenType::Comma {
-                self.advance();
-                labels.push(self.case_label()?);
-            } else {
-                break;
+    fn case_item(&mut self) -> Result<Option<CaseItem>, ParserError> {
+        if let Some(lbl) = self.case_label()? {
+            let mut labels = vec![lbl];
+            while let Some(token) = self.peek() {
+                if token.kind == TokenType::Comma {
+                    self.advance();
+                    if let Some(lbl) = self.case_label()? {
+                        labels.push(lbl);
+                    } else {
+                        return Err(error_tok(ParserErrorType::ExpectedCaseLabel, &token));
+                    }
+                } else {
+                    break;
+                }
             }
+            self.consume(TokenType::Colon, SrcSpan { start: 0, end: 0 })?;
+            let statement = Box::new(self.statement()?);
+            Ok(Some(CaseItem {
+                labels,
+                statement,
+            }))
+        } else {
+            Ok(None)
         }
-        self.consume(TokenType::Colon, SrcSpan { start: 0, end: 0 })?;
-        let statement = Box::new(self.statement()?.unwrap());
-        Ok(CaseItem {
-            labels,
-            statement,
-        })
     }
 
     fn case_statement(&mut self) -> Result<Option<UnlabeledStmt>, ParserError> {
         if let Some(token) = self.peek() {
             if token.kind == TokenType::Case {
                 self.advance();
-                let condition = Box::new(self.expression()?.unwrap());
+                let condition = Box::new(self.expected_expression(&token)?);
                 self.consume(TokenType::Of, token.as_ref().into())?;
                 let mut case_items = vec![];
-                while let Ok(item) = self.case_item() {
+                while let Some(item) = self.case_item()? {
                     case_items.push(Box::new(item));
                 }
                 let mut else_branch = None;
                 if let Some(token) = self.peek() {
                     if token.kind == TokenType::Else {
                         self.advance();
-                        else_branch = Some(Box::new(self.statement()?.unwrap()));
+                        else_branch = Some(Box::new(self.statement()?));
                     }
                 }
                 self.consume(TokenType::End, token.as_ref().into())?;
@@ -841,7 +879,7 @@ where
                 self.advance();
                 let statements = self.statement_list()?;
                 self.consume(TokenType::Until, token.as_ref().into())?;
-                let expr = self.expression()?.unwrap();
+                let expr = self.expected_expression(&token)?;
                 return Ok(Some(UnlabeledStmt::Repeat {
                     statements,
                     condition: Box::new(expr),
@@ -855,9 +893,9 @@ where
         if let Some(token) = self.peek() {
             if token.kind == TokenType::While {
                 self.advance();
-                let condition = Box::new(self.expression()?.unwrap());
+                let condition = Box::new(self.expected_expression(&token)?);
                 self.consume(TokenType::Do, token.as_ref().into())?;
-                let statement = Box::new(self.statement()?.unwrap());
+                let statement = Box::new(self.statement()?);
                 return Ok(Some(UnlabeledStmt::While {
                     condition,
                     statement,
@@ -871,13 +909,13 @@ where
         if let Some(token) = self.peek() {
             if token.kind == TokenType::For {
                 self.advance();
-                let var = Box::new(self.designator()?.unwrap());
+                let var = Box::new(self.expected_designator(&token)?);
                 self.consume(TokenType::Assignment, token.as_ref().into())?;
-                let init = Box::new(self.expression()?.unwrap());
+                let init = Box::new(self.expected_expression(&token)?);
                 self.consume(TokenType::To, token.as_ref().into())?;
-                let to = Box::new(self.expression()?.unwrap());
+                let to = Box::new(self.expected_expression(&token)?);
                 self.consume(TokenType::Do, token.as_ref().into())?;
-                let statement = Box::new(self.statement()?.unwrap());
+                let statement = Box::new(self.statement()?);
                 return Ok(Some(UnlabeledStmt::For {
                     var,
                     init,
@@ -908,68 +946,104 @@ where
 
     // Как же это убого выглядит
     fn expression(&mut self) -> Result<Option<Expr>, ParserError> {
-        let mut expr = self.simple_expression()?.unwrap();
-        if let Some(token) = self.peek() {
-            match token.kind {
-                TokenType::Equal 
-                | TokenType::NotEqual
-                | TokenType::Less
-                | TokenType::Greater
-                | TokenType::LessEqual
-                | TokenType::GreaterEqual
-                | TokenType::In => {
-                    self.advance();
-                    let right = self.expression()?.unwrap();
-                    expr = Expr::Binary {
-                        left: Box::new(expr),
-                        operator: token.clone(),
-                        right: Box::new(right),
-                    };
+        if let Some(expr) = self.simple_expression()? {
+            let mut expr = expr;
+            if let Some(token) = self.peek() {
+                match token.kind {
+                    TokenType::Equal 
+                    | TokenType::NotEqual
+                    | TokenType::Less
+                    | TokenType::Greater
+                    | TokenType::LessEqual
+                    | TokenType::GreaterEqual
+                    | TokenType::In => {
+                        self.advance();
+                        let right = self.expected_expression(&token)?;
+                        expr = Expr::Binary {
+                            left: Box::new(expr),
+                            operator: token.clone(),
+                            right: Box::new(right),
+                        };
+                    }
+                    _ => { },
                 }
-                _ => { },
             }
+            Ok(Some(expr))
+        } else {
+            Ok(None)
         }
-        Ok(Some(expr))
+    }
+
+    fn expected_expression(&mut self, prev_tok: &Token) -> Result<Expr, ParserError> {
+        if let Some(expr) = self.expression()? {
+            Ok(expr)
+        } else {
+            Err(error_tok(ParserErrorType::ExpectedExpression, prev_tok))
+        }
     }
 
     fn simple_expression(&mut self) -> Result<Option<Expr>, ParserError> {
-        let mut expr = self.term()?.unwrap();
-        if let Some(token) = self.peek() {
-            match token.kind {
-                TokenType::Plus | TokenType::Minus | TokenType::Or => {
-                    self.advance();
-                    let right = self.simple_expression()?.unwrap();
-                    expr = Expr::Binary {
-                        left: Box::new(expr),
-                        operator: token.clone(),
-                        right: Box::new(right),
-                    };
+        if let Some(expr) = self.term()? {
+            let mut expr = expr;
+            if let Some(token) = self.peek() {
+                match token.kind {
+                    TokenType::Plus | TokenType::Minus | TokenType::Or => {
+                        self.advance();
+                        let right = self.expected_simple_expression(&token)?;
+                        expr = Expr::Binary {
+                            left: Box::new(expr),
+                            operator: token.clone(),
+                            right: Box::new(right),
+                        };
+                    }
+                    _ => { },
                 }
-                _ => { },
             }
+            Ok(Some(expr))
+        } else {
+            Ok(None)
         }
-        Ok(Some(expr))
+    }
+
+    fn expected_simple_expression(&mut self, prev_tok: &Token) -> Result<Expr, ParserError> {
+        if let Some(expr) = self.simple_expression()? {
+            Ok(expr)
+        } else {
+            Err(error_tok(ParserErrorType::ExpectedSimpleExpression, prev_tok))
+        }
     }
 
     fn term(&mut self) -> Result<Option<Expr>, ParserError> {
-        let mut expr = self.signed_factor()?.unwrap();
-        while let Some(token) = self.peek() {
-            match token.kind {
-                TokenType::Star | TokenType::Slash 
-                | TokenType::Div | TokenType::Mod
-                | TokenType::And => {
-                    self.advance();
-                    let right = self.term()?.unwrap();
-                    expr = Expr::Binary {
-                        left: Box::new(expr),
-                        operator: token.clone(),
-                        right: Box::new(right),
-                    };
+        if let Some(expr) = self.signed_factor()? {
+            let mut expr = expr;
+            while let Some(token) = self.peek() {
+                match token.kind {
+                    TokenType::Star | TokenType::Slash 
+                    | TokenType::Div | TokenType::Mod
+                    | TokenType::And => {
+                        self.advance();
+                        let right = self.expected_term(&token)?;
+                        expr = Expr::Binary {
+                            left: Box::new(expr),
+                            operator: token.clone(),
+                            right: Box::new(right),
+                        };
+                    }
+                    _ => break,
                 }
-                _ => break,
             }
+            Ok(Some(expr))
+        } else {
+            Ok(None)
         }
-        Ok(Some(expr))
+    }
+
+    fn expected_term(&mut self, prev_tok: &Token) -> Result<Expr, ParserError> {
+        if let Some(expr) = self.term()? {
+            Ok(expr)
+        } else {
+            Err(error_tok(ParserErrorType::ExpectedTerm, prev_tok))
+        }
     }
 
     fn signed_factor(&mut self) -> Result<Option<Expr>, ParserError> {
@@ -977,7 +1051,7 @@ where
             match token.kind {
                 TokenType::Plus | TokenType::Minus => {
                     self.advance();
-                    let right = self.factor()?.unwrap();
+                    let right = self.expected_factor(&token)?;
                     Ok(Some(Expr::Unary {
                         operator: token.clone(),
                         right: Box::new(right),
@@ -999,7 +1073,7 @@ where
                 ..
             }) => {
                 self.advance();
-                let expr = self.factor()?.unwrap();
+                let expr = self.expected_factor(&token)?;
                 Ok(Some(Expr::Unary {
                     operator: token.clone(),
                     right: Box::new(expr),
@@ -1011,7 +1085,7 @@ where
                 ..
             }) => {
                 self.advance();
-                let _expr = self.factor()?;
+                let _expr = self.expected_factor(&token)?;
                 Ok(Some(Expr::Literal {
                     value: token.clone(),
                 }))
@@ -1022,7 +1096,7 @@ where
                 ..
             }) => {
                 self.advance();
-                let expr = self.factor()?.unwrap();
+                let expr = self.expected_factor(&token)?;
                 Ok(Some(Expr::Unary {
                     operator: token.clone(),
                     right: Box::new(expr),
@@ -1034,7 +1108,7 @@ where
                 ..
             }) => {
                 self.advance();
-                let expr = self.factor()?.unwrap();
+                let expr = self.expected_factor(&token)?;
                 Ok(Some(Expr::Unary {
                     operator: token.clone(),
                     right: Box::new(expr),
@@ -1076,7 +1150,7 @@ where
                 ..
             }) => {
                 self.advance();
-                let expr = self.expression()?.unwrap();
+                let expr = self.expected_expression(&token)?;
                 self.consume(TokenType::RightParen, token.as_ref().into())?;
                 Ok(Some(expr))
             },
@@ -1089,6 +1163,14 @@ where
             Ok(Some(Expr::Designator { designator }))
         } else {
             Ok(None)
+        }
+    }
+
+    fn expected_factor(&mut self, prev_tok: &Token) -> Result<Expr, ParserError> {
+        if let Some(expr) = self.factor()? {
+            Ok(expr)
+        } else {
+            Err(error_tok(ParserErrorType::ExpectedFactor, prev_tok))
         }
     }
 }

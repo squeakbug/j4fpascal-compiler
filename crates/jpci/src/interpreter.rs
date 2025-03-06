@@ -178,7 +178,7 @@ impl Interpreter {
 
     fn visit_procedure_declaration(
         &mut self, 
-        decl: &Box<ProcedureDeclaration>
+        decl: &ProcedureDeclaration
     ) -> Result<(), InterpreterError> {
         let proc = ProcedureValue::Native(NativeProcedureValue {
             decl: decl.clone(),
@@ -186,10 +186,32 @@ impl Interpreter {
         self.environment.define(&decl.head.name, Value::Procedure(proc))
     }
 
+    fn visit_label_declaration(&mut self, _decl: &str) -> Result<(), InterpreterError> {
+        Ok(())
+    }
+
+    fn visit_const_declaration(&mut self, _decl: &(String, Box<Expr>)) -> Result<(), InterpreterError> {
+        Ok(())
+    }
+
     fn visit_decl_section(&mut self, section: &DeclSection) -> Result<(), InterpreterError> {
         match section {
+            DeclSection::Label(label_decl) => {
+                for decl in label_decl.iter() {
+                    self.visit_label_declaration(decl)?;
+                }
+                Ok(())
+            },
+            DeclSection::Const(const_decl) => {
+                for decl in const_decl.iter() {
+                    self.visit_const_declaration(decl)?;
+                }
+                Ok(())
+            },
             DeclSection::Type(type_decl) => {
-                self.visit_type_declaration(type_decl)?;
+                for decl in type_decl.iter() {
+                    self.visit_type_declaration(decl)?;
+                }
                 Ok(())
             },
             DeclSection::Variable(var_decl) => {
@@ -330,6 +352,9 @@ impl Interpreter {
             },
             UnlabeledStmt::Continue => {
                 Err(InterpreterError::NotImplemented)
+            },
+            UnlabeledStmt::Empty => {
+                Ok(())
             },
         }
     }

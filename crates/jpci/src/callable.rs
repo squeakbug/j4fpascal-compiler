@@ -13,7 +13,7 @@ pub trait Callable {
 
 #[derive(Debug, Clone)]
 pub struct NativeProcedureValue {
-    pub decl: Box<ProcedureDeclaration>,
+    pub decl: ProcedureDeclaration,
 }
 
 #[derive(Debug, Clone)]
@@ -120,11 +120,6 @@ pub enum ProcedureValue {
     Writeln(WritelnProcedureValue),
     Read(ReadProcedureValue),
     Readln(ReadlnProcedureValue),
-}
-
-#[derive(Debug, Clone)]
-pub enum {
-    FunctionValue
 }
 
 impl Callable for ProcedureValue {

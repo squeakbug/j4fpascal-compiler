@@ -111,6 +111,7 @@ pub enum UnlabeledStmt {
     },
     Break,
     Continue,
+    Empty,
 }
 
 #[derive(Debug, Clone)]
