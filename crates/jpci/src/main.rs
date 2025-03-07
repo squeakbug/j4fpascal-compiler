@@ -1,5 +1,6 @@
 mod callable;
 mod interpreter;
+mod type_system;
 
 use std::{
     env,

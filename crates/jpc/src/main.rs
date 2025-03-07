@@ -1,5 +1,7 @@
+mod alpha;
 mod hir;
 mod riscv;
+mod wasm;
 
 use std::{
     env,

@@ -4,9 +4,15 @@
 
 ### Rust-specific 
 
-* [Rust compiler in Rust](https://github.com/rust-lang/rust)
-* [gleam compiler in Rust](https://github.com/gleam-lang/gleam)
-* [ante compiler in Rust](https://github.com/jfecher/ante)
+* [Rust compiler in Rust](https://github.com/rust-lang/rust) - check many tools and utils
+* [gleam compiler in Rust](https://github.com/gleam-lang/gleam) - check good parser and diagnostic
+* [ante compiler in Rust](https://github.com/jfecher/ante) - simple for reading code of compiler for rust-like language. Language provides ownership concept
+* [Python interpreter in Rust](https://github.com/RustPython/RustPython)
+    * Parser lives in separate [crate](https://github.com/RustPython/Parser) cause it's used by [ruff](https://github.com/astral-sh/ruff) project too
+    * [Bytecode definition](https://github.com/RustPython/RustPython/blob/main/compiler/core/src/bytecode.rs)
+    * [PyObject definition](https://github.com/RustPython/RustPython/blob/main/vm/src/object/core.rs#L104)
+    * [Virtual machine](https://github.com/RustPython/RustPython/tree/main/vm/src/vm)
+    * [Some useful utils](https://github.com/RustPython/RustPython/tree/main/common/src)
 
 ### Pascal-specific
 
@@ -15,7 +21,7 @@
 ### Optimizations
 
 * [shecc - A self-hosting and educational C optimizing compiler](https://github.com/sysprog21/shecc)
-* [Interpreter for Rust's mid-level intermediate representation ](https://github.com/rust-lang/miri)
+* [Interpreter for Rust's mid-level intermediate representation](https://github.com/rust-lang/miri)
 * [Educational compiler intermediate representation](https://github.com/sampsyo/bril)
 
 ### Other

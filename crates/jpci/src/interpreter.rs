@@ -33,39 +33,10 @@ pub enum InterpreterError {
     AlreadyDefined,
 }
 
-/// Result of tree-walking
-#[derive(Debug, Clone)]
-pub enum Value {
-    UnsignedInteger(i64),
-    UnsignedReal(f64),
-    String(String),
-    Boolean(bool),
-    Procedure(ProcedureValue),
-    // TODO: When classes arive, change to some reference type
-    Ref(Designator),
-    Record(HashMap<String, Value>),
-    Null,
-}
-
-impl fmt::Display for Value {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Value::UnsignedInteger(num) => write!(f, "{:?}", num),
-            Value::UnsignedReal(num) => write!(f, "{:?}", num),
-            Value::String(s) => write!(f, "\"{:?}\"", s),
-            Value::Boolean(b) => write!(f, "{:?}", b),
-            Value::Procedure(p) => write!(f, "{:?}", p),
-            Value::Ref(d) => write!(f, "{:?}", d),
-            Value::Record(r) => write!(f, "{:?}", r),
-            Value::Null => write!(f, "null"),
-        }
-    }
-}
-
 #[derive(Debug, Clone)]
 pub struct Environment {
     pub enclosing: Option<Box<Environment>>,
-    pub symbols: HashMap<String, Value>,
+    pub symbols: HashMap<String, Symbol>,
 }
 
 macro_rules! get_typed {
