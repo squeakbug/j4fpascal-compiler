@@ -21,6 +21,9 @@ pub struct NativeProcedureValue {
     pub decl: ProcedureDeclaration,
 }
 
+// TODO: add declarative macros, like here: https://github.com/RustPython/RustPython/wiki/Python-Attributes
+// you only need to annotate function, that receives instances of Interpreted language types (like PyRef, PyStrRef, PyObjectRef, etc..) and instance of virtual machine, that will interpret this call
+
 #[derive(Debug, Clone)]
 pub struct WriteProcedureValue;
 

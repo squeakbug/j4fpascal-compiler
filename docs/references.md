@@ -8,6 +8,21 @@
 * [gleam compiler in Rust](https://github.com/gleam-lang/gleam)
 * [ante compiler in Rust](https://github.com/jfecher/ante)
 
+https://github.com/progval/pythonvm-rust
+https://github.com/lambdaclass/cairo-vm
+
+TODO: check if so many traits are implemented for PyExact:
+https://github.com/RustPython/RustPython/blob/main/vm/src/object/ext.rs
+
+TODO: check how https://github.com/PyO3/pyo3 are corresponded with RustPython
+
+ HDF* file format
+ Mikuláš Patocka (2006). Design and Implementation of the Spad Filesystem (PDF) (Thesis). Archived from the original (PDF) on 2016-03-15. Retrieved 2016-02-27. "Section 4.1.6 Extendible hashing: ZFS and GFS" and "Table 4.1: Directory organization in filesystems"
+ https://cmph.sourceforge.net/papers/esa09.pdf 
+
+
+TODO: http://asic.ee.ethz.ch/2024/MLEM.html
+
 ### Pascal-specific
 
 * [Free Pascal Compiler](https://gitlab.com/freepascal.org)
