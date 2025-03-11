@@ -16,13 +16,14 @@
 
 ### Pascal-specific
 
+* [A-Bauman-BTPC-64](https://github.com/bmstu-iu9/A-Bauman-BTPC-64)
 * [Free Pascal Compiler](https://gitlab.com/freepascal.org)
 
-### Optimizations
+### Code analysis and optimizing transformations
 
 * [shecc - A self-hosting and educational C optimizing compiler](https://github.com/sysprog21/shecc)
 * [Interpreter for Rust's mid-level intermediate representation](https://github.com/rust-lang/miri)
-* [Educational compiler intermediate representation](https://github.com/sampsyo/bril)
+* [Educational compiler intermediate representation](https://github.com/sampsyo/bril) - splitting phi functions into 'get' and 'set' functions
 
 ### Other
 
@@ -32,8 +33,10 @@
 
 * [Crafting interpreters](https://craftinginterpreters.com/)
 * [Static Single Assignment Book](https://pfalcon.github.io/ssabook/latest/)
+    * [Static Single-Assignment Form Seminar](https://compilers.cs.uni-saarland.de/ssasem/)
 * [Engineering: A Compiler](https://www.amazon.com/Engineering-Compiler-Keith-Cooper/dp/012088478X) - there is 3rd edition
 * [Мучник](https://www.amazon.com/Advanced-Compiler-Design-Implementation-Muchnick/dp/1558603204)
+* [Tiger book (C, Java and ML ed.)](https://www.cs.princeton.edu/~appel/modern/ml)
 * [Red dragon](https://www.amazon.com/Compilers-Principles-Techniques-Tools-2nd/dp/0321486811)
 * [Compiler Construction. Niklaus Wirth](https://www.amazon.com/Compiler-Construction-International-Computer-Science/dp/0201403536)
 * [Оптимизирующие компиляторы. Структура и алгоритмы](https://www.chitai-gorod.ru/product/optimiziruyushchie-kompilyatory-struktura-i-algoritmy-3059667)

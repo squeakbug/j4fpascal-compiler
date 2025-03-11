@@ -1,5 +1,6 @@
 mod alpha;
 mod hir;
+mod pcode;
 mod riscv;
 mod wasm;
 

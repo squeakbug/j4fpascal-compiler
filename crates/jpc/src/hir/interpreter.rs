@@ -1,14 +1,6 @@
-use std::{
-    collections::HashMap,
-    fmt::{self, Debug},
-    fs,
-};
+use std::{fmt::Debug, vec};
 
-use crate::hir::codegen::{
-    Constant,
-    Instruction::{self, *},
-    Module,
-};
+use super::basic_block::{Constant, Instruction, InstructionKind, Module};
 
 #[derive(Debug, Clone)]
 pub enum InterpreterError {
@@ -26,15 +18,16 @@ pub struct Interpreter {
 impl Interpreter {
     pub fn new(module: Module) -> Self {
         Interpreter {
-            imem: module.instructions,
-            constants: module.constants,
+            imem: vec![],
+            constants: vec![],
             stack: vec![],
             ip: 0,
         }
     }
 
     pub fn exec(&mut self, inst: Instruction) {
-        match inst {
+        use InstructionKind::*;
+        match inst.kind {
             // Memory access and adressing operations
             Store { src, dst } => {}
             Load { dst, src } => {}

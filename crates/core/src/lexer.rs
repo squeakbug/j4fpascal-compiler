@@ -167,6 +167,7 @@ pub enum LexerErrorType {
 // TODO: change to const expression from modern Rust
 // I can use FSM or prefix tree (aka trie), but i would save not too much memory
 // But maybe rust compiler will do this...
+// TODO: make benchmark for lexer and try https://github.com/rust-phf/rust-phf
 pub fn str_to_keyword(word: &str) -> Option<TokenType> {
     match word {
         "and" => Some(TokenType::And),

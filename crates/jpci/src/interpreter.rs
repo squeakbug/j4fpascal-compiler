@@ -296,7 +296,9 @@ impl Interpreter {
                 condition: _,
                 case_items: _,
                 else_branch: _,
-            } => Ok(()),
+            } => {
+                Ok(())
+            },
             UnlabeledStmt::Repeat {
                 statements,
                 condition,
